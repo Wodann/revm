@@ -1,5 +1,6 @@
 use crate::{
     bits::{B160, B256},
+    blockchain::Blockchain,
     evm_impl::EVMData,
     opcode, spec_opcode_gas, CallInputs, CreateInputs, Database, Gas, Interpreter, Return,
 };
@@ -7,7 +8,7 @@ use auto_impl::auto_impl;
 use bytes::Bytes;
 
 #[auto_impl(&mut, Box)]
-pub trait Inspector<DB: Database> {
+pub trait Inspector<DB: Database, BC: Blockchain<Error = DB::Error>> {
     /// Called Before the interpreter is initialized.
     ///
     /// If anything other than [Return::Continue] is returned then execution of the interpreter is
@@ -15,7 +16,7 @@ pub trait Inspector<DB: Database> {
     fn initialize_interp(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
     ) -> Return {
         Return::Continue
@@ -32,7 +33,7 @@ pub trait Inspector<DB: Database> {
     fn step(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
     ) -> Return {
         Return::Continue
@@ -41,7 +42,7 @@ pub trait Inspector<DB: Database> {
     /// Called when a log is emitted.
     fn log(
         &mut self,
-        _evm_data: &mut EVMData<'_, DB>,
+        _evm_data: &mut EVMData<'_, DB, BC>,
         _address: &B160,
         _topics: &[B256],
         _data: &Bytes,
@@ -54,7 +55,7 @@ pub trait Inspector<DB: Database> {
     fn step_end(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
         _eval: Return,
     ) -> Return {
@@ -66,7 +67,7 @@ pub trait Inspector<DB: Database> {
     /// Returning anything other than [Return::Continue] overrides the result of the call.
     fn call(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &mut CallInputs,
         _is_static: bool,
     ) -> (Return, Gas, Bytes) {
@@ -79,7 +80,7 @@ pub trait Inspector<DB: Database> {
     /// out)`) will alter the result of the call.
     fn call_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &CallInputs,
         remaining_gas: Gas,
         ret: Return,
@@ -94,7 +95,7 @@ pub trait Inspector<DB: Database> {
     /// Returning anything other than [Return::Continue] overrides the result of the creation.
     fn create(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &mut CreateInputs,
     ) -> (Return, Option<B160>, Gas, Bytes) {
         (Return::Continue, None, Gas::new(0), Bytes::default())
@@ -106,7 +107,7 @@ pub trait Inspector<DB: Database> {
     /// address, out)`) will alter the result of the create.
     fn create_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &CreateInputs,
         ret: Return,
         address: Option<B160>,
@@ -123,7 +124,7 @@ pub trait Inspector<DB: Database> {
 #[derive(Clone, Copy)]
 pub struct NoOpInspector();
 
-impl<DB: Database> Inspector<DB> for NoOpInspector {}
+impl<DB: Database, BC: Blockchain<Error = DB::Error>> Inspector<DB, BC> for NoOpInspector {}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GasInspector {
@@ -143,11 +144,11 @@ impl GasInspector {
     }
 }
 
-impl<DB: Database> Inspector<DB> for GasInspector {
+impl<DB: Database, BC: Blockchain<Error = DB::Error>> Inspector<DB, BC> for GasInspector {
     fn initialize_interp(
         &mut self,
         interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
     ) -> Return {
         self.full_gas_block = interp.contract.first_gas_block();
@@ -160,7 +161,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
     fn step(
         &mut self,
         interp: &mut Interpreter,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
     ) -> Return {
         let op = interp.current_opcode();
@@ -186,7 +187,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
     fn step_end(
         &mut self,
         interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _is_static: bool,
         _eval: Return,
     ) -> Return {
@@ -213,7 +214,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
     fn call_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &CallInputs,
         remaining_gas: Gas,
         ret: Return,
@@ -226,7 +227,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
     fn create_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         _inputs: &CreateInputs,
         ret: Return,
         address: Option<B160>,
@@ -240,6 +241,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
 #[cfg(test)]
 mod tests {
+    use crate::blockchain::{Blockchain, EmptyBlockchain};
     use crate::db::BenchmarkDB;
     use crate::{
         opcode, Bytecode, CallInputs, CreateInputs, Database, EVMData, Gas, GasInspector,
@@ -255,11 +257,11 @@ mod tests {
         gas_remaining_steps: Vec<(usize, u64)>,
     }
 
-    impl<DB: Database> Inspector<DB> for StackInspector {
+    impl<DB: Database, BC: Blockchain<Error = DB::Error>> Inspector<DB, BC> for StackInspector {
         fn initialize_interp(
             &mut self,
             interp: &mut Interpreter,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             is_static: bool,
         ) -> Return {
             self.gas_inspector
@@ -270,7 +272,7 @@ mod tests {
         fn step(
             &mut self,
             interp: &mut Interpreter,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             is_static: bool,
         ) -> Return {
             self.pc = interp.program_counter();
@@ -280,7 +282,7 @@ mod tests {
 
         fn log(
             &mut self,
-            evm_data: &mut EVMData<'_, DB>,
+            evm_data: &mut EVMData<'_, DB, BC>,
             address: &B160,
             topics: &[B256],
             data: &Bytes,
@@ -291,7 +293,7 @@ mod tests {
         fn step_end(
             &mut self,
             interp: &mut Interpreter,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             is_static: bool,
             eval: Return,
         ) -> Return {
@@ -303,7 +305,7 @@ mod tests {
 
         fn call(
             &mut self,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             call: &mut CallInputs,
             is_static: bool,
         ) -> (Return, Gas, Bytes) {
@@ -314,7 +316,7 @@ mod tests {
 
         fn call_end(
             &mut self,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             inputs: &CallInputs,
             remaining_gas: Gas,
             ret: Return,
@@ -328,7 +330,7 @@ mod tests {
 
         fn create(
             &mut self,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             call: &mut CreateInputs,
         ) -> (Return, Option<B160>, Gas, Bytes) {
             self.gas_inspector.create(data, call);
@@ -343,7 +345,7 @@ mod tests {
 
         fn create_end(
             &mut self,
-            data: &mut EVMData<'_, DB>,
+            data: &mut EVMData<'_, DB, BC>,
             inputs: &CreateInputs,
             status: Return,
             address: Option<B160>,
@@ -377,6 +379,8 @@ mod tests {
 
         let mut evm = crate::new();
         evm.database(BenchmarkDB::new_bytecode(bytecode.clone()));
+        evm.set_blockchain(EmptyBlockchain);
+
         evm.env.tx.caller = B160(hex!("1000000000000000000000000000000000000000"));
         evm.env.tx.transact_to =
             TransactTo::Call(B160(hex!("0000000000000000000000000000000000000000")));

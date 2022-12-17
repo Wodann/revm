@@ -2,6 +2,7 @@ use bytes::Bytes;
 pub use revm::Inspector;
 use revm::{
     bits::B160,
+    blockchain::Blockchain,
     opcode::{self},
     CallInputs, CreateInputs, Database, EVMData, Gas, GasInspector, Return,
 };
@@ -18,11 +19,11 @@ impl CustomPrintTracer {
     }
 }
 
-impl<DB: Database> Inspector<DB> for CustomPrintTracer {
+impl<DB: Database, BC: Blockchain<Error = DB::Error>> Inspector<DB, BC> for CustomPrintTracer {
     fn initialize_interp(
         &mut self,
         interp: &mut revm::Interpreter,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         is_static: bool,
     ) -> Return {
         self.gas_inspector
@@ -35,7 +36,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
     fn step(
         &mut self,
         interp: &mut revm::Interpreter,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         is_static: bool,
     ) -> Return {
         let opcode = interp.current_opcode();
@@ -65,7 +66,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
     fn step_end(
         &mut self,
         interp: &mut revm::Interpreter,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         is_static: bool,
         eval: revm::Return,
     ) -> Return {
@@ -75,7 +76,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn call_end(
         &mut self,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         inputs: &CallInputs,
         remaining_gas: Gas,
         ret: Return,
@@ -89,7 +90,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn create_end(
         &mut self,
-        data: &mut EVMData<'_, DB>,
+        data: &mut EVMData<'_, DB, BC>,
         inputs: &CreateInputs,
         ret: Return,
         address: Option<B160>,
@@ -103,7 +104,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn call(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         inputs: &mut CallInputs,
         is_static: bool,
     ) -> (Return, Gas, Bytes) {
@@ -120,7 +121,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn create(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DB, BC>,
         inputs: &mut CreateInputs,
     ) -> (Return, Option<B160>, Gas, Bytes) {
         println!(
@@ -145,7 +146,7 @@ mod test {
 
     use super::*;
     use hex_literal::hex;
-    use revm::{common::keccak256, Bytecode, TransactTo, U256};
+    use revm::{blockchain::InMemoryBlockchain, common::keccak256, Bytecode, TransactTo, U256};
 
     #[test]
     fn gas_calculation_underflow() {
@@ -164,6 +165,8 @@ mod test {
         let callee = hex!("5fdcca53617f4d2b9134b29090c87d01058e27e9");
         database.insert_account_info(B160(callee), acc_info);
         evm.database(database);
+        evm.set_blockchain(InMemoryBlockchain::default());
+
         evm.env.tx.caller = B160(hex!("5fdcca53617f4d2b9134b29090c87d01058e27e0"));
         evm.env.tx.transact_to = TransactTo::Call(B160(callee));
         evm.env.tx.data = Bytes::from(hex::decode("").unwrap());

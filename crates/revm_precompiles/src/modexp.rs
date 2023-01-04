@@ -67,6 +67,7 @@ where
     F: FnOnce(u64, u64, u64, &BigUint) -> u64,
 {
     let len = input.len();
+    // TODO: pad right with zeroes (https://github.com/ethereum/execution-specs/blob/95ef6bf957a4c66993168384cec395ef1a030026/src/ethereum/paris/vm/precompiled_contracts/modexp.py#L31)
     let (base_len, base_overflow) = read_u64_with_overflow!(input, 0, 32, u32::MAX as usize);
     let (exp_len, exp_overflow) = read_u64_with_overflow!(input, 32, 64, u32::MAX as usize);
     let (mod_len, mod_overflow) = read_u64_with_overflow!(input, 64, 96, u32::MAX as usize);

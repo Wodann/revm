@@ -1,6 +1,9 @@
-use crate::{interpreter::Interpreter, Host, Return, U256};
+use crate::{evm_impl::EvmResult, interpreter::Interpreter, Host, Return, U256};
 
-pub fn mload(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn mload<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
     pop!(interpreter, index);
     let index = as_usize_or_fail!(interpreter, index, Return::OutOfGas);
@@ -11,17 +14,27 @@ pub fn mload(interpreter: &mut Interpreter, _host: &mut dyn Host) {
             interpreter.memory.get_slice(index, 32).try_into().unwrap()
         )
     );
+
+    Ok(())
 }
 
-pub fn mstore(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn mstore<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
     pop!(interpreter, index, value);
     let index = as_usize_or_fail!(interpreter, index, Return::OutOfGas);
     memory_resize!(interpreter, index, 32);
     interpreter.memory.set_u256(index, value);
+
+    Ok(())
 }
 
-pub fn mstore8(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn mstore8<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
     pop!(interpreter, index, value);
     let index = as_usize_or_fail!(interpreter, index, Return::OutOfGas);
@@ -29,9 +42,16 @@ pub fn mstore8(interpreter: &mut Interpreter, _host: &mut dyn Host) {
     let value = value.as_le_bytes()[0];
     // Safety: we resized our memory two lines above.
     unsafe { interpreter.memory.set_byte(index, value) }
+
+    Ok(())
 }
 
-pub fn msize(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn msize<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, U256::from(interpreter.memory.effective_len()));
+
+    Ok(())
 }

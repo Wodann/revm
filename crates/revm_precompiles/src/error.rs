@@ -1,8 +1,8 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
-    /// out of gas is the main error. Other are just here for completness
+    /// out of gas is the main error. Other are just here for completeness
     OutOfGas,
-    // Blake2 erorr
+    // Blake2 errors
     Blake2WrongLength,
     Blake2WrongFinalIndicatorFlag,
     // Modexp errors

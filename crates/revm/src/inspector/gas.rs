@@ -1,9 +1,9 @@
 //! GasIspector. Helper Inspector to calculte gas for others.
 //!
 use crate::{
-    bits::B160, evm_impl::EVMData, CallInputs, CreateInputs, Database, Gas, Inspector, Return,
+    evm_impl::EVMData, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Inspector,
+    Return,
 };
-use bytes::Bytes;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GasInspector {
@@ -99,36 +99,33 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CallInputs,
-        remaining_gas: Gas,
-        ret: Return,
-        out: Bytes,
+        outputs: Result<CallOutputs, DB::Error>,
         _is_static: bool,
-    ) -> (Return, Gas, Bytes) {
+    ) -> Result<CallOutputs, DB::Error> {
         self.was_return = true;
-        (ret, remaining_gas, out)
+        outputs
     }
 
     fn create_end(
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CreateInputs,
-        ret: Return,
-        address: Option<B160>,
-        remaining_gas: Gas,
-        out: Bytes,
-    ) -> (Return, Option<B160>, Gas, Bytes) {
+        outputs: CreateOutputs,
+    ) -> CreateOutputs {
         self.was_return = true;
-        (ret, address, remaining_gas, out)
+        outputs
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::db::BenchmarkDB;
+    use crate::instructions::Eval;
     use crate::{
         inspectors::GasInspector, opcode, Bytecode, CallInputs, CreateInputs, Database, EVMData,
         Gas, Inspector, Interpreter, OpCode, Return, TransactTo, B160, B256,
     };
+    use crate::{CallOutputs, CreateOutputs};
     use bytes::Bytes;
     use hex_literal::hex;
 
@@ -139,7 +136,10 @@ mod tests {
         gas_remaining_steps: Vec<(usize, u64)>,
     }
 
-    impl<DB: Database> Inspector<DB> for StackInspector {
+    impl<DB: Database> Inspector<DB> for StackInspector
+    where
+        DB::Error: Clone,
+    {
         fn initialize_interp(
             &mut self,
             interp: &mut Interpreter,
@@ -190,53 +190,47 @@ mod tests {
             data: &mut EVMData<'_, DB>,
             call: &mut CallInputs,
             is_static: bool,
-        ) -> (Return, Gas, Bytes) {
+        ) -> CallOutputs {
             self.gas_inspector.call(data, call, is_static);
 
-            (Return::Continue, Gas::new(call.gas_limit), Bytes::new())
+            CallOutputs {
+                exit_reason: Eval::Continue,
+                gas: Gas::new(call.gas_limit),
+                return_value: Bytes::new(),
+            }
         }
 
         fn call_end(
             &mut self,
             data: &mut EVMData<'_, DB>,
             inputs: &CallInputs,
-            remaining_gas: Gas,
-            ret: Return,
-            out: Bytes,
+            outputs: Result<CallOutputs, DB::Error>,
             is_static: bool,
-        ) -> (Return, Gas, Bytes) {
+        ) -> Result<CallOutputs, DB::Error> {
             self.gas_inspector
-                .call_end(data, inputs, remaining_gas, ret, out.clone(), is_static);
-            (ret, remaining_gas, out)
+                .call_end(data, inputs, outputs.clone(), is_static);
+            outputs
         }
 
-        fn create(
-            &mut self,
-            data: &mut EVMData<'_, DB>,
-            call: &mut CreateInputs,
-        ) -> (Return, Option<B160>, Gas, Bytes) {
+        fn create(&mut self, data: &mut EVMData<'_, DB>, call: &mut CreateInputs) -> CreateOutputs {
             self.gas_inspector.create(data, call);
 
-            (
-                Return::Continue,
-                None,
-                Gas::new(call.gas_limit),
-                Bytes::new(),
-            )
+            CreateOutputs {
+                exit_reason: Eval::Continue,
+                address: None,
+                gas: Gas::new(call.gas_limit),
+                return_value: Bytes::new(),
+            }
         }
 
         fn create_end(
             &mut self,
             data: &mut EVMData<'_, DB>,
             inputs: &CreateInputs,
-            status: Return,
-            address: Option<B160>,
-            gas: Gas,
-            retdata: Bytes,
-        ) -> (Return, Option<B160>, Gas, Bytes) {
-            self.gas_inspector
-                .create_end(data, inputs, status, address, gas, retdata.clone());
-            (status, address, gas, retdata)
+            outputs: CreateOutputs,
+        ) -> CreateOutputs {
+            self.gas_inspector.create_end(data, inputs, outputs.clone());
+            outputs
         }
     }
 
@@ -267,7 +261,10 @@ mod tests {
         evm.env.tx.gas_limit = 21100;
 
         let mut inspector = StackInspector::default();
-        let (result, state) = evm.inspect(&mut inspector);
+        let (result, state) = evm
+            .inspect(&mut inspector)
+            .expect("Transaction should have succeeded");
+
         println!("{result:?} {state:?} {inspector:?}");
 
         for (pc, gas) in inspector.gas_remaining_steps {

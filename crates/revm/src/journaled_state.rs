@@ -1,4 +1,4 @@
-use crate::{interpreter::bytecode::Bytecode, models::SelfDestructResult, Return, KECCAK_EMPTY};
+use crate::{interpreter::bytecode::Bytecode, models::SelfDestructResult, KECCAK_EMPTY};
 use alloc::{vec, vec::Vec};
 use core::mem::{self};
 use hashbrown::{hash_map::Entry, HashMap as Map};
@@ -258,21 +258,20 @@ impl JournaledState {
         to: &B160,
         balance: U256,
         db: &mut DB,
-    ) -> Result<(bool, bool), Return> {
+    ) -> Result<(bool, bool), DB::Error> {
         // load accounts
-        let (_, from_is_cold) = self
-            .load_account(*from, db)
-            .map_err(|_| Return::FatalExternalError)?;
+        let (_, from_is_cold) = self.load_account(*from, db)?;
 
-        let (_, to_is_cold) = self
-            .load_account(*to, db)
-            .map_err(|_| Return::FatalExternalError)?;
+        let (_, to_is_cold) = self.load_account(*to, db)?;
 
         // sub balance from
         let from_account = &mut self.state.get_mut(from).unwrap();
         Self::touch_account(self.journal.last_mut().unwrap(), from, from_account);
         let from_balance = &mut from_account.info.balance;
-        *from_balance = from_balance.checked_sub(balance).ok_or(Return::OutOfFund)?;
+        *from_balance = from_balance
+            .checked_sub(balance)
+            .expect("Transaction has already been validated");
+        // TODO: validate transaction + block
 
         // add balance to
         let to_account = &mut self.state.get_mut(to).unwrap();
@@ -280,7 +279,7 @@ impl JournaledState {
         let to_balance = &mut to_account.info.balance;
         *to_balance = to_balance
             .checked_add(balance)
-            .ok_or(Return::OverflowPayment)?;
+            .expect("Overflow of U256 balance is not possible on mainnet");
         // Overflow of U256 balance is not possible to happen on mainnet. We dont bother to return funds from from_acc.
 
         self.journal

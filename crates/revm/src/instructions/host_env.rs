@@ -1,54 +1,108 @@
-use crate::{interpreter::Interpreter, Host, Return, Spec, SpecId::*};
+use crate::{
+    evm_impl::{EvmError, EvmResult},
+    interpreter::Interpreter,
+    Host, Return, Spec,
+    SpecId::*,
+};
 
-pub fn chainid<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn chainid<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     // EIP-1344: ChainID opcode
     check!(interpreter, SPEC::enabled(ISTANBUL));
     push!(interpreter, host.env().cfg.chain_id);
+
+    Ok(())
 }
 
-pub fn coinbase(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn coinbase<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
-    push_b256!(interpreter, host.env().block.coinbase.into());
+    interpreter
+        .stack
+        .push_b256(host.env().block.coinbase.into())
+        .map_err(EvmError::from)
 }
 
-pub fn timestamp(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn timestamp<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, host.env().block.timestamp);
+
+    Ok(())
 }
 
-pub fn number(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn number<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, host.env().block.number);
+
+    Ok(())
 }
 
-pub fn difficulty<H: Host, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {
+pub fn difficulty<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     if SPEC::enabled(MERGE) {
-        push_b256!(interpreter, host.env().block.prevrandao.unwrap());
+        interpreter
+            .stack
+            .push_b256(host.env().block.prevrandao.unwrap())?;
     } else {
         push!(interpreter, host.env().block.difficulty);
     }
+
+    Ok(())
 }
 
-pub fn gaslimit(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn gaslimit<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, host.env().block.gas_limit);
+
+    Ok(())
 }
 
-pub fn gasprice(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn gasprice<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, host.env().effective_gas_price());
+
+    Ok(())
 }
 
-pub fn basefee<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn basefee<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     // EIP-3198: BASEFEE opcode
     check!(interpreter, SPEC::enabled(LONDON));
     push!(interpreter, host.env().block.basefee);
+
+    Ok(())
 }
 
-pub fn origin(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn origin<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
-    push_b256!(interpreter, host.env().tx.caller.into());
+    interpreter
+        .stack
+        .push_b256(host.env().tx.caller.into())
+        .map_err(EvmError::from)
 }

@@ -9,7 +9,8 @@ pub use memory::Memory;
 pub use stack::Stack;
 
 use crate::{
-    instructions::{eval, Return},
+    evm_impl::ExceptionalHalt,
+    instructions::{eval, Eval, Reason, Return},
     Gas, Host, Spec, USE_GAS,
 };
 use bytes::Bytes;
@@ -34,7 +35,7 @@ pub struct Interpreter {
     /// Return value.
     pub return_range: Range<usize>,
     /// Return is main control flag, it tell us if we should continue interpreter or break from it
-    pub instruction_result: Return,
+    // pub instruction_result: Return,
     /// Is interpreter call static.
     pub is_static: bool,
     /// Memory limit. See [`crate::CfgEnv`].
@@ -55,7 +56,7 @@ impl Interpreter {
             stack: Stack::new(),
             return_data_buffer: Bytes::new(),
             contract,
-            instruction_result: Return::Continue,
+            // instruction_result: Return::Continue,
             is_static,
             gas: Gas::new(gas_limit),
         }
@@ -75,7 +76,7 @@ impl Interpreter {
             stack: Stack::new(),
             return_data_buffer: Bytes::new(),
             contract,
-            instruction_result: Return::Continue,
+            // instruction_result: Return::Continue,
             is_static,
             gas: Gas::new(gas_limit),
             memory_limit,
@@ -96,14 +97,14 @@ impl Interpreter {
     }
 
     #[inline(always)]
-    pub fn add_next_gas_block(&mut self, pc: usize) -> Option<Return> {
+    pub fn add_next_gas_block(&mut self, pc: usize) -> Result<(), ExceptionalHalt> {
         if USE_GAS {
             let gas_block = self.contract.gas_block(pc);
             if !self.gas.record_cost(gas_block) {
-                return Some(Return::OutOfGas);
+                return Err(ExceptionalHalt::OutOfGas);
             }
         }
-        None
+        Ok(())
     }
 
     /// Return a reference of the program counter.
@@ -116,11 +117,11 @@ impl Interpreter {
     }
 
     /// loop steps until we are finished with execution
-    pub fn run<H: Host, SPEC: Spec>(&mut self, host: &mut H, inspect: bool) -> Return {
+    pub fn run<H: Host, SPEC: Spec>(&mut self, host: &mut H, inspect: bool) -> Reason {
         //let timer = std::time::Instant::now();
         // add first gas_block
         if USE_GAS && !self.gas.record_cost(self.contract.first_gas_block()) {
-            return Return::OutOfGas;
+            return Reason::from(Eval::OutOfGas);
         }
         if inspect {
             while self.instruction_result == Return::Continue {

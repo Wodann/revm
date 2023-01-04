@@ -1,7 +1,8 @@
 use crate::{
     bits::{B160, B256},
     evm_impl::EVMData,
-    CallInputs, CreateInputs, Database, Gas, Interpreter, Return,
+    instructions::{Eval, Reason},
+    CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Gas, Interpreter, Return,
 };
 use auto_impl::auto_impl;
 use bytes::Bytes;
@@ -29,8 +30,8 @@ pub trait Inspector<DB: Database> {
         _interp: &mut Interpreter,
         _data: &mut EVMData<'_, DB>,
         _is_static: bool,
-    ) -> Return {
-        Return::Continue
+    ) -> Eval {
+        Eval::Continue
     }
 
     /// Called on each step of the interpreter.
@@ -46,8 +47,8 @@ pub trait Inspector<DB: Database> {
         _interp: &mut Interpreter,
         _data: &mut EVMData<'_, DB>,
         _is_static: bool,
-    ) -> Return {
-        Return::Continue
+    ) -> Eval {
+        Eval::Continue
     }
 
     /// Called when a log is emitted.
@@ -68,9 +69,9 @@ pub trait Inspector<DB: Database> {
         _interp: &mut Interpreter,
         _data: &mut EVMData<'_, DB>,
         _is_static: bool,
-        _eval: Return,
-    ) -> Return {
-        Return::Continue
+        _eval: Eval,
+    ) -> Eval {
+        Eval::Continue
     }
 
     /// Called whenever a call to a contract is about to start.
@@ -81,8 +82,8 @@ pub trait Inspector<DB: Database> {
         _data: &mut EVMData<'_, DB>,
         _inputs: &mut CallInputs,
         _is_static: bool,
-    ) -> (Return, Gas, Bytes) {
-        (Return::Continue, Gas::new(0), Bytes::new())
+    ) -> CallOutputs<Reason> {
+        CallOutputs::default()
     }
 
     /// Called when a call to a contract has concluded.
@@ -93,12 +94,10 @@ pub trait Inspector<DB: Database> {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CallInputs,
-        remaining_gas: Gas,
-        ret: Return,
-        out: Bytes,
+        outputs: Result<CallOutputs, DB::Error>,
         _is_static: bool,
-    ) -> (Return, Gas, Bytes) {
-        (ret, remaining_gas, out)
+    ) -> Result<CallOutputs, DB::Error> {
+        outputs
     }
 
     /// Called when a contract is about to be created.
@@ -108,8 +107,8 @@ pub trait Inspector<DB: Database> {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &mut CreateInputs,
-    ) -> (Return, Option<B160>, Gas, Bytes) {
-        (Return::Continue, None, Gas::new(0), Bytes::default())
+    ) -> CreateOutputs<Eval> {
+        CreateOutputs::default()
     }
 
     /// Called when a contract has been created.
@@ -120,12 +119,9 @@ pub trait Inspector<DB: Database> {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CreateInputs,
-        ret: Return,
-        address: Option<B160>,
-        remaining_gas: Gas,
-        out: Bytes,
-    ) -> (Return, Option<B160>, Gas, Bytes) {
-        (ret, address, remaining_gas, out)
+        outputs: CreateOutputs<Eval>,
+    ) -> CreateOutputs<Eval> {
+        outputs
     }
 
     /// Called when a contract has been self-destructed.

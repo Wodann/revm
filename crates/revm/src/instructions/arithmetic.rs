@@ -1,59 +1,109 @@
 use super::i256::{i256_div, i256_mod};
-use crate::{gas, Host, Interpreter, Return, Spec, U256};
+use crate::{evm_impl::EvmResult, gas, Host, Interpreter, Return, Spec, U256};
 
-pub fn wrapped_add(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn wrapped_add<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.wrapping_add(*op2);
+
+    Ok(())
 }
 
-pub fn wrapping_mul(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn wrapping_mul<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.wrapping_mul(*op2);
+
+    Ok(())
 }
 
-pub fn wrapping_sub(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn wrapping_sub<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.wrapping_sub(*op2);
+
+    Ok(())
 }
 
-pub fn div(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn div<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
-    *op2 = op1.checked_div(*op2).unwrap_or_default()
+    *op2 = op1.checked_div(*op2).unwrap_or_default();
+
+    Ok(())
 }
 
-pub fn sdiv(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn sdiv<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = i256_div(op1, *op2);
+
+    Ok(())
 }
 
-pub fn rem(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn rem<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
-    *op2 = op1.checked_rem(*op2).unwrap_or_default()
+    *op2 = op1.checked_rem(*op2).unwrap_or_default();
+
+    Ok(())
 }
 
-pub fn smod(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn smod<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     if *op2 != U256::ZERO {
-        *op2 = i256_mod(op1, *op2)
+        *op2 = i256_mod(op1, *op2);
     };
+
+    Ok(())
 }
 
-pub fn addmod(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn addmod<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2, op3);
-    *op3 = op1.add_mod(op2, *op3)
+    *op3 = op1.add_mod(op2, *op3);
+
+    Ok(())
 }
 
-pub fn mulmod(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn mulmod<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2, op3);
-    *op3 = op1.mul_mod(op2, *op3)
+    *op3 = op1.mul_mod(op2, *op3);
+
+    Ok(())
 }
 
-pub fn eval_exp<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn eval_exp<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop!(interpreter, op1, op2);
     gas_or_fail!(interpreter, gas::exp_cost::<SPEC>(op2));
     // TODO see if we can use pop_top
     let ret = op1.pow(op2);
     push!(interpreter, ret);
+
+    Ok(())
 }
 
 /// In the yellow paper `SIGNEXTEND` is defined to take two inputs, we will call them
@@ -71,7 +121,10 @@ pub fn eval_exp<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host)
 /// `y | !mask` where `|` is the bitwise `OR` and `!` is bitwise negation. Similarly, if
 /// `b == 0` then the yellow paper says the output should start with all zeros, then end with
 /// bits from `b`; this is equal to `y & mask` where `&` is bitwise `AND`.
-pub fn signextend(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn signextend<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     if op1 < U256::from(32) {
         // `low_u32` works since op1 < 32
@@ -80,4 +133,6 @@ pub fn signextend(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         let mask = (U256::from(1) << bit_index) - U256::from(1);
         *op2 = if bit { *op2 | !mask } else { *op2 & mask };
     }
+
+    Ok(())
 }

@@ -4,8 +4,10 @@
 use crate::{
     bits::B160,
     inspectors::GasInspector,
+    instructions::Eval,
     opcode::{self},
-    Bytes, CallInputs, CreateInputs, Database, EVMData, Gas, Inspector, Interpreter, Return,
+    Bytes, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, EVMData, Gas, Inspector,
+    Interpreter, Return,
 };
 use hex;
 #[derive(Clone, Default)]
@@ -13,7 +15,10 @@ pub struct CustomPrintTracer {
     gas_inspector: GasInspector,
 }
 
-impl<DB: Database> Inspector<DB> for CustomPrintTracer {
+impl<DB: Database> Inspector<DB> for CustomPrintTracer
+where
+    DB::Error: Clone,
+{
     fn initialize_interp(
         &mut self,
         interp: &mut Interpreter,
@@ -72,28 +77,22 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
         &mut self,
         data: &mut EVMData<'_, DB>,
         inputs: &CallInputs,
-        remaining_gas: Gas,
-        ret: Return,
-        out: Bytes,
+        outputs: Result<CallOutputs, DB::Error>,
         is_static: bool,
-    ) -> (Return, Gas, Bytes) {
+    ) -> Result<CallOutputs, DB::Error> {
         self.gas_inspector
-            .call_end(data, inputs, remaining_gas, ret, out.clone(), is_static);
-        (ret, remaining_gas, out)
+            .call_end(data, inputs, outputs.clone(), is_static);
+        outputs
     }
 
     fn create_end(
         &mut self,
         data: &mut EVMData<'_, DB>,
         inputs: &CreateInputs,
-        ret: Return,
-        address: Option<B160>,
-        remaining_gas: Gas,
-        out: Bytes,
-    ) -> (Return, Option<B160>, Gas, Bytes) {
-        self.gas_inspector
-            .create_end(data, inputs, ret, address, remaining_gas, out.clone());
-        (ret, address, remaining_gas, out)
+        outputs: CreateOutputs,
+    ) -> CreateOutputs {
+        self.gas_inspector.create_end(data, inputs, outputs.clone());
+        outputs
     }
 
     fn call(
@@ -101,7 +100,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
         _data: &mut EVMData<'_, DB>,
         inputs: &mut CallInputs,
         is_static: bool,
-    ) -> (Return, Gas, Bytes) {
+    ) -> CallOutputs {
         println!(
             "SM CALL:   {:?},context:{:?}, is_static:{:?}, transfer:{:?}, input_size:{:?}",
             inputs.contract,
@@ -110,14 +109,11 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
             inputs.transfer,
             inputs.input.len(),
         );
-        (Return::Continue, Gas::new(0), Bytes::new())
+
+        CallOutputs::default()
     }
 
-    fn create(
-        &mut self,
-        _data: &mut EVMData<'_, DB>,
-        inputs: &mut CreateInputs,
-    ) -> (Return, Option<B160>, Gas, Bytes) {
+    fn create(&mut self, _data: &mut EVMData<'_, DB>, inputs: &mut CreateInputs) -> CreateOutputs {
         println!(
             "CREATE CALL: caller:{:?}, scheme:{:?}, value:{:?}, init_code:{:?}, gas:{:?}",
             inputs.caller,
@@ -126,7 +122,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
             hex::encode(&inputs.init_code),
             inputs.gas_limit
         );
-        (Return::Continue, None, Gas::new(0), Bytes::new())
+        CreateOutputs::default()
     }
 
     fn selfdestruct(&mut self) {

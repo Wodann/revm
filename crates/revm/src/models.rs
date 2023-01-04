@@ -3,8 +3,9 @@ use core::cmp::min;
 use crate::{
     alloc::vec::Vec,
     bits::{B160, B256},
+    instructions::Eval,
     interpreter::bytecode::Bytecode,
-    Return, SpecId, U256,
+    Gas, Return, SpecId, U256,
 };
 use bytes::Bytes;
 use hex_literal::hex;
@@ -93,6 +94,24 @@ pub struct CallInputs {
     pub is_static: bool,
 }
 
+/// Outputs for a transact call.
+#[derive(Clone)]
+pub struct CallOutputs<R> {
+    pub exit_reason: R,
+    pub gas: Gas,
+    pub return_value: Bytes,
+}
+
+impl<R: Default> Default for CallOutputs<R> {
+    fn default() -> Self {
+        Self {
+            exit_reason: R::default(),
+            gas: Gas::new(0),
+            return_value: Bytes::new(),
+        }
+    }
+}
+
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateInputs {
     pub caller: B160,
@@ -101,6 +120,26 @@ pub struct CreateInputs {
     #[cfg_attr(feature = "with-serde", serde(with = "serde_hex_bytes"))]
     pub init_code: Bytes,
     pub gas_limit: u64,
+}
+
+/// Outputs for a create call.
+#[derive(Clone)]
+pub struct CreateOutputs<R> {
+    pub exit_reason: R,
+    pub address: Option<B160>,
+    pub gas: Gas,
+    pub return_value: Bytes,
+}
+
+impl<R: Default> Default for CreateOutputs<R> {
+    fn default() -> Self {
+        Self {
+            exit_reason: R::default(),
+            address: None,
+            gas: Gas::new(0),
+            return_value: Bytes::new(),
+        }
+    }
 }
 
 pub struct CreateData {}

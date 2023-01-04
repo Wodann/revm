@@ -1474,6 +1474,7 @@ dependencies = [
  "ruint",
  "serde",
  "sha3",
+ "thiserror",
  "tokio",
 ]
 

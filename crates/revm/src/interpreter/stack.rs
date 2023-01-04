@@ -1,4 +1,4 @@
-use crate::{alloc::vec::Vec, Return, B256, U256};
+use crate::{alloc::vec::Vec, evm_impl::ExceptionalHalt, B256, U256};
 
 pub const STACK_LIMIT: usize = 1024;
 
@@ -61,22 +61,22 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub fn reduce_one(&mut self) -> Option<Return> {
+    pub fn reduce_one(&mut self) -> Result<(), ExceptionalHalt> {
         let len = self.data.len();
         if len < 1 {
-            return Some(Return::StackUnderflow);
+            return Err(ExceptionalHalt::StackUnderflow);
         }
         unsafe {
             self.data.set_len(len - 1);
         }
-        None
+        Ok(())
     }
 
     #[inline]
     /// Pop a value from the stack. If the stack is already empty, returns the
     /// `StackUnderflow` error.
-    pub fn pop(&mut self) -> Result<U256, Return> {
-        self.data.pop().ok_or(Return::StackUnderflow)
+    pub fn pop(&mut self) -> Result<U256, ExceptionalHalt> {
+        self.data.pop().ok_or(ExceptionalHalt::StackUnderflow)
     }
 
     #[inline(always)]
@@ -181,9 +181,9 @@ impl Stack {
     #[inline]
     /// Push a new value into the stack. If it will exceed the stack limit,
     /// returns `StackOverflow` error and leaves the stack unchanged.
-    pub fn push_b256(&mut self, value: B256) -> Result<(), Return> {
+    pub fn push_b256(&mut self, value: B256) -> Result<(), ExceptionalHalt> {
         if self.data.len() + 1 > STACK_LIMIT {
-            return Err(Return::StackOverflow);
+            return Err(ExceptionalHalt::StackOverflow);
         }
         self.data.push(U256::from_be_bytes(value.0));
         Ok(())
@@ -192,9 +192,9 @@ impl Stack {
     #[inline]
     /// Push a new value into the stack. If it will exceed the stack limit,
     /// returns `StackOverflow` error and leaves the stack unchanged.
-    pub fn push(&mut self, value: U256) -> Result<(), Return> {
+    pub fn push(&mut self, value: U256) -> Result<(), ExceptionalHalt> {
         if self.data.len() + 1 > STACK_LIMIT {
-            return Err(Return::StackOverflow);
+            return Err(ExceptionalHalt::StackOverflow);
         }
         self.data.push(value);
         Ok(())
@@ -204,36 +204,36 @@ impl Stack {
     /// Peek a value at given index for the stack, where the top of
     /// the stack is at index `0`. If the index is too large,
     /// `StackError::Underflow` is returned.
-    pub fn peek(&self, no_from_top: usize) -> Result<U256, Return> {
+    pub fn peek(&self, no_from_top: usize) -> Result<U256, ExceptionalHalt> {
         if self.data.len() > no_from_top {
             Ok(self.data[self.data.len() - no_from_top - 1])
         } else {
-            Err(Return::StackUnderflow)
+            Err(ExceptionalHalt::StackUnderflow)
         }
     }
 
     #[inline(always)]
-    pub fn dup<const N: usize>(&mut self) -> Option<Return> {
+    pub fn dup<const N: usize>(&mut self) -> Result<(), ExceptionalHalt> {
         let len = self.data.len();
         if len < N {
-            Some(Return::StackUnderflow)
+            Err(ExceptionalHalt::StackUnderflow)
         } else if len + 1 > STACK_LIMIT {
-            Some(Return::StackOverflow)
+            Err(ExceptionalHalt::StackOverflow)
         } else {
             // Safety: check for out of bounds is done above and it makes this safe to do.
             unsafe {
                 *self.data.get_unchecked_mut(len) = *self.data.get_unchecked(len - N);
                 self.data.set_len(len + 1);
             }
-            None
+            Ok(())
         }
     }
 
     #[inline(always)]
-    pub fn swap<const N: usize>(&mut self) -> Option<Return> {
+    pub fn swap<const N: usize>(&mut self) -> Result<(), ExceptionalHalt> {
         let len = self.data.len();
         if len <= N {
-            return Some(Return::StackUnderflow);
+            return Err(ExceptionalHalt::StackUnderflow);
         }
         // Safety: length is checked before so we are okay to switch bytes in unsafe way.
         unsafe {
@@ -241,15 +241,15 @@ impl Stack {
             let pb: *mut U256 = self.data.get_unchecked_mut(len - 1 - N);
             core::ptr::swap(pa, pb);
         }
-        None
+        Ok(())
     }
 
     /// push slice onto memory it is expected to be max 32 bytes and be contains inside B256
     #[inline(always)]
-    pub fn push_slice<const N: usize>(&mut self, slice: &[u8]) -> Option<Return> {
+    pub fn push_slice<const N: usize>(&mut self, slice: &[u8]) -> Result<(), ExceptionalHalt> {
         let new_len = self.data.len() + 1;
         if new_len > STACK_LIMIT {
-            return Some(Return::StackOverflow);
+            return Err(ExceptionalHalt::StackOverflow);
         }
 
         let slot;
@@ -294,20 +294,20 @@ impl Stack {
                 }
             }
         }
-        None
+        Ok(())
     }
 
     #[inline]
     /// Set a value at given index for the stack, where the top of the
     /// stack is at index `0`. If the index is too large,
     /// `StackError::Underflow` is returned.
-    pub fn set(&mut self, no_from_top: usize, val: U256) -> Result<(), Return> {
+    pub fn set(&mut self, no_from_top: usize, val: U256) -> Result<(), ExceptionalHalt> {
         if self.data.len() > no_from_top {
             let len = self.data.len();
             self.data[len - no_from_top - 1] = val;
             Ok(())
         } else {
-            Err(Return::StackUnderflow)
+            Err(ExceptionalHalt::StackUnderflow)
         }
     }
 }

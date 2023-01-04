@@ -1,24 +1,25 @@
 use crate::{
     alloc::vec::Vec,
     bits::{B160, B256},
+    evm_impl::{EvmError, EvmResult, ExceptionalHalt},
     gas::{self, COLD_ACCOUNT_ACCESS_COST, WARM_STORAGE_READ_COST},
     interpreter::Interpreter,
-    return_ok, return_revert, CallContext, CallInputs, CallScheme, CreateInputs, CreateScheme,
-    Host, Return, Spec,
+    return_ok, return_revert, CallContext, CallInputs, CallOutputs, CallScheme, CreateInputs,
+    CreateOutputs, CreateScheme, Host, Return, Spec,
     SpecId::*,
     Transfer, U256,
 };
 use bytes::Bytes;
 use core::cmp::min;
 
-pub fn balance<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+use super::Eval;
+
+pub fn balance<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_address!(interpreter, address);
-    let ret = host.balance(address);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (balance, is_cold) = ret.unwrap();
+    let (balance, is_cold) = host.balance(address).map_err(EvmError::DatabaseFailure)?;
     gas!(
         interpreter,
         if SPEC::enabled(ISTANBUL) {
@@ -31,29 +32,32 @@ pub fn balance<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
         }
     );
     push!(interpreter, balance);
+
+    Ok(())
 }
 
-pub fn selfbalance<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn selfbalance<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::LOW);
     // EIP-1884: Repricing for trie-size-dependent opcodes
     check!(interpreter, SPEC::enabled(ISTANBUL));
-    let ret = host.balance(interpreter.contract.address);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (balance, _) = ret.unwrap();
+    let balance = host
+        .balance(interpreter.contract.address)
+        .map_err(EvmError::DatabaseFailure)?
+        .0;
     push!(interpreter, balance);
+
+    Ok(())
 }
 
-pub fn extcodesize<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn extcodesize<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_address!(interpreter, address);
-    let ret = host.code(address);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (code, is_cold) = ret.unwrap();
+    let (code, is_cold) = host.code(address).map_err(EvmError::DatabaseFailure)?;
     if SPEC::enabled(BERLIN) && is_cold {
         // WARM_STORAGE_READ_COST is already calculated in gas block
         gas!(
@@ -63,17 +67,17 @@ pub fn extcodesize<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Hos
     }
 
     push!(interpreter, U256::from(code.len()));
+
+    Ok(())
 }
 
-pub fn extcodehash<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn extcodehash<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     check!(interpreter, SPEC::enabled(CONSTANTINOPLE)); // EIP-1052: EXTCODEHASH opcode
     pop_address!(interpreter, address);
-    let ret = host.code_hash(address);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (code_hash, is_cold) = ret.unwrap();
+    let (code_hash, is_cold) = host.code_hash(address).map_err(EvmError::DatabaseFailure)?;
     if SPEC::enabled(BERLIN) && is_cold {
         // WARM_STORAGE_READ_COST is already calculated in gas block
         gas!(
@@ -81,19 +85,20 @@ pub fn extcodehash<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Hos
             COLD_ACCOUNT_ACCESS_COST - WARM_STORAGE_READ_COST
         );
     }
-    push_b256!(interpreter, code_hash);
+    interpreter
+        .stack
+        .push_b256(code_hash)
+        .map_err(EvmError::from)
 }
 
-pub fn extcodecopy<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn extcodecopy<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_address!(interpreter, address);
     pop!(interpreter, memory_offset, code_offset, len_u256);
 
-    let ret = host.code(address);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (code, is_cold) = ret.unwrap();
+    let (code, is_cold) = host.code(address).map_err(EvmError::DatabaseFailure)?;
 
     let len = as_usize_or_fail!(interpreter, len_u256, Return::OutOfGas);
     gas_or_fail!(
@@ -101,7 +106,7 @@ pub fn extcodecopy<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Hos
         gas::extcodecopy_cost::<SPEC>(len as u64, is_cold)
     );
     if len == 0 {
-        return;
+        return Ok(());
     }
     let memory_offset = as_usize_or_fail!(interpreter, memory_offset, Return::OutOfGas);
     let code_offset = min(as_usize_saturated!(code_offset), code.len());
@@ -111,9 +116,14 @@ pub fn extcodecopy<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Hos
     interpreter
         .memory
         .set_data(memory_offset, code_offset, len, code.bytes());
+
+    Ok(())
 }
 
-pub fn blockhash(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn blockhash<H: Host>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BLOCKHASH);
     pop_top!(interpreter, number);
 
@@ -121,52 +131,57 @@ pub fn blockhash(interpreter: &mut Interpreter, host: &mut dyn Host) {
         let diff = as_usize_saturated!(diff);
         // blockhash should push zero if number is same as current block number.
         if diff <= 256 && diff != 0 {
-            let ret = host.block_hash(*number);
-            if ret.is_none() {
-                interpreter.instruction_result = Return::FatalExternalError;
-                return;
-            }
-            *number = U256::from_be_bytes(*ret.unwrap());
-            return;
+            let block_hash = host
+                .block_hash(*number)
+                .map_err(EvmError::DatabaseFailure)?;
+            *number = U256::from_be_bytes(*block_hash);
+            return Ok(());
         }
     }
     *number = U256::ZERO;
+
+    Ok(())
 }
 
-pub fn sload<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn sload<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop!(interpreter, index);
 
-    let ret = host.sload(interpreter.contract.address, index);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (value, is_cold) = ret.unwrap();
+    let (value, is_cold) = host
+        .sload(interpreter.contract.address, index)
+        .map_err(EvmError::DatabaseFailure)?;
     gas!(interpreter, gas::sload_cost::<SPEC>(is_cold));
     push!(interpreter, value);
+
+    Ok(())
 }
 
-pub fn sstore<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn sstore<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     check!(interpreter, !interpreter.is_static);
 
     pop!(interpreter, index, value);
-    let ret = host.sstore(interpreter.contract.address, index, value);
-    if ret.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (original, old, new, is_cold) = ret.unwrap();
+    let (original, old, new, is_cold) = host
+        .sstore(interpreter.contract.address, index, value)
+        .map_err(EvmError::DatabaseFailure)?;
     gas_or_fail!(interpreter, {
         let remaining_gas = interpreter.gas.remaining();
         gas::sstore_cost::<SPEC>(original, old, new, remaining_gas, is_cold)
     });
     refund!(interpreter, gas::sstore_refund::<SPEC>(original, old, new));
-    if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
+
+    Ok(())
 }
 
-pub fn log<const N: u8, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn log<const N: u8, H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     check!(interpreter, !interpreter.is_static);
 
     pop!(interpreter, offset, len);
@@ -181,8 +196,7 @@ pub fn log<const N: u8, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dy
     };
     let n = N as usize;
     if interpreter.stack.len() < n {
-        interpreter.instruction_result = Return::StackUnderflow;
-        return;
+        return Err(EvmError::from(ExceptionalHalt::StackUnderflow));
     }
 
     let mut topics = Vec::with_capacity(n);
@@ -194,18 +208,20 @@ pub fn log<const N: u8, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dy
     }
 
     host.log(interpreter.contract.address, topics, data);
+
+    Ok(())
 }
 
-pub fn selfdestruct<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
+pub fn selfdestruct<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<Eval, H::DatabaseError> {
     check!(interpreter, !interpreter.is_static);
     pop_address!(interpreter, target);
 
-    let res = host.selfdestruct(interpreter.contract.address, target);
-    if res.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let res = res.unwrap();
+    let res = host
+        .selfdestruct(interpreter.contract.address, target)
+        .map_err(EvmError::DatabaseFailure)?;
 
     // EIP-3529: Reduction in refunds
     if !SPEC::enabled(LONDON) && !res.previously_destroyed {
@@ -213,13 +229,13 @@ pub fn selfdestruct<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Ho
     }
     gas!(interpreter, gas::selfdestruct_cost::<SPEC>(res));
 
-    interpreter.instruction_result = Return::SelfDestruct;
+    Ok(Eval::SelfDestruct)
 }
 
-pub fn create<const IS_CREATE2: bool, SPEC: Spec>(
+pub fn create<const IS_CREATE2: bool, H: Host, SPEC: Spec>(
     interpreter: &mut Interpreter,
-    host: &mut dyn Host,
-) {
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     check!(interpreter, !interpreter.is_static);
     if IS_CREATE2 {
         // EIP-1014: Skinny CREATE2
@@ -265,58 +281,73 @@ pub fn create<const IS_CREATE2: bool, SPEC: Spec>(
         gas_limit,
     };
 
-    let (return_reason, address, gas, return_data) = host.create(&mut create_input);
-    interpreter.return_data_buffer = match return_reason {
+    let CreateOutputs {
+        exit_reason: eval,
+        address,
+        gas,
+        return_value: out,
+    } = host.create(&mut create_input)?;
+    interpreter.return_data_buffer = match eval {
         // Save data to return data buffer if the create reverted
-        return_revert!() => return_data,
+        return_revert!() => out,
         // Otherwise clear it
         _ => Bytes::new(),
     };
 
-    match return_reason {
+    match eval {
         return_ok!() => {
-            push_b256!(interpreter, address.unwrap_or_default().into());
+            interpreter
+                .stack
+                .push_b256(address.unwrap_or_default().into())?;
             interpreter.gas.erase_cost(gas.remaining());
             interpreter.gas.record_refund(gas.refunded());
         }
         return_revert!() => {
-            push_b256!(interpreter, B256::zero());
+            interpreter.stack.push_b256(B256::zero())?;
             interpreter.gas.erase_cost(gas.remaining());
         }
-        Return::FatalExternalError => {
-            interpreter.instruction_result = Return::FatalExternalError;
-            return;
-        }
         _ => {
-            push_b256!(interpreter, B256::zero());
+            interpreter.stack.push_b256(B256::zero())?;
         }
     }
-    if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
+
+    Ok(())
 }
 
-pub fn call<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
-    call_inner::<SPEC>(interpreter, CallScheme::Call, host);
+pub fn call<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
+    call_inner::<H, SPEC>(interpreter, CallScheme::Call, host)
 }
 
-pub fn call_code<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
-    call_inner::<SPEC>(interpreter, CallScheme::CallCode, host);
+pub fn call_code<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
+    call_inner::<H, SPEC>(interpreter, CallScheme::CallCode, host)
 }
 
-pub fn delegate_call<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
-    call_inner::<SPEC>(interpreter, CallScheme::DelegateCall, host);
+pub fn delegate_call<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
+    call_inner::<H, SPEC>(interpreter, CallScheme::DelegateCall, host)
 }
 
-pub fn static_call<SPEC: Spec>(interpreter: &mut Interpreter, host: &mut dyn Host) {
-    call_inner::<SPEC>(interpreter, CallScheme::StaticCall, host);
+pub fn static_call<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
+    call_inner::<H, SPEC>(interpreter, CallScheme::StaticCall, host)
 }
 
-pub fn call_inner<SPEC: Spec>(
+pub fn call_inner<H: Host, SPEC: Spec>(
     interpreter: &mut Interpreter,
     scheme: CallScheme,
-    host: &mut dyn Host,
-) {
+    host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     match scheme {
         CallScheme::DelegateCall => check!(interpreter, SPEC::enabled(HOMESTEAD)), // EIP-7: DELEGATECALL
         CallScheme::StaticCall => check!(interpreter, SPEC::enabled(BYZANTIUM)), // EIP-214: New opcode STATICCALL
@@ -336,8 +367,7 @@ pub fn call_inner<SPEC: Spec>(
         CallScheme::Call => {
             pop!(interpreter, value);
             if interpreter.is_static && value != U256::ZERO {
-                interpreter.instruction_result = Return::CallNotAllowedInsideStatic;
-                return;
+                return Err(EvmError::from(ExceptionalHalt::WriteInStaticContext));
             }
             value
         }
@@ -410,12 +440,8 @@ pub fn call_inner<SPEC: Spec>(
     };
 
     // load account and calculate gas cost.
-    let res = host.load_account(to);
-    if res.is_none() {
-        interpreter.instruction_result = Return::FatalExternalError;
-        return;
-    }
-    let (is_cold, exist) = res.unwrap();
+    let (is_cold, exist) = host.load_account(to).map_err(EvmError::DatabaseFailure)?;
+
     let is_new = !exist;
 
     gas!(
@@ -456,13 +482,17 @@ pub fn call_inner<SPEC: Spec>(
     };
 
     // Call host to interuct with target contract
-    let (reason, gas, return_data) = host.call(&mut call_input);
+    let CallOutputs {
+        exit_reason: eval,
+        gas,
+        return_value: out,
+    } = host.call(&mut call_input)?;
 
-    interpreter.return_data_buffer = return_data;
+    interpreter.return_data_buffer = out;
 
     let target_len = min(out_len, interpreter.return_data_buffer.len());
 
-    match reason {
+    match eval {
         return_ok!() => {
             // return unspend gas.
             interpreter.gas.erase_cost(gas.remaining());
@@ -479,15 +509,11 @@ pub fn call_inner<SPEC: Spec>(
                 .set(out_offset, &interpreter.return_data_buffer[..target_len]);
             push!(interpreter, U256::ZERO);
         }
-        Return::FatalExternalError => {
-            interpreter.instruction_result = Return::FatalExternalError;
-            return;
-        }
         _ => {
             push!(interpreter, U256::ZERO);
         }
     }
-    if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
+
+    Ok(())
 }

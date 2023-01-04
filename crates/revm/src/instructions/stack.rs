@@ -1,37 +1,45 @@
-use crate::{interpreter::Interpreter, Host};
+use crate::{
+    evm_impl::{EvmError, EvmResult},
+    interpreter::Interpreter,
+    Host,
+};
 
-pub fn pop(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn pop<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
-    if let Some(ret) = interpreter.stack.reduce_one() {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.stack.reduce_one().map_err(EvmError::from)
 }
 
-pub fn push<const N: usize>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn push<const N: usize, H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
     let start = interpreter.instruction_pointer;
     // Safety: In Analysis we appended needed bytes for bytecode so that we are safe to just add without
     // checking if it is out of bound. This makes both of our unsafes block safe to do.
-    if let Some(ret) = interpreter
+    interpreter
         .stack
-        .push_slice::<N>(unsafe { core::slice::from_raw_parts(start, N) })
-    {
-        interpreter.instruction_result = ret;
-        return;
-    }
+        .push_slice::<N>(unsafe { core::slice::from_raw_parts(start, N) })?;
+
     interpreter.instruction_pointer = unsafe { interpreter.instruction_pointer.add(N) };
+    Ok(())
 }
 
-pub fn dup<const N: usize>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn dup<const N: usize, H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
-    if let Some(ret) = interpreter.stack.dup::<N>() {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.stack.dup::<N>().map_err(EvmError::from)
 }
 
-pub fn swap<const N: usize>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn swap<const N: usize, H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
-    if let Some(ret) = interpreter.stack.swap::<N>() {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.stack.swap::<N>().map_err(EvmError::from)
 }

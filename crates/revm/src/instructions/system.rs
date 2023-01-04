@@ -1,10 +1,18 @@
 use crate::{
-    common::keccak256, gas, interpreter::Interpreter, Host, Return, Spec, SpecId::*, B256,
-    KECCAK_EMPTY, U256,
+    common::keccak256,
+    evm_impl::{EvmError, EvmResult, ExceptionalHalt},
+    gas,
+    interpreter::Interpreter,
+    Host, Return, Spec,
+    SpecId::*,
+    B256, KECCAK_EMPTY, U256,
 };
 use std::cmp::min;
 
-pub fn sha3(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn sha3<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop!(interpreter, from, len);
     let len = as_usize_or_fail!(interpreter, len, Return::OutOfGas);
     gas_or_fail!(interpreter, gas::sha3_cost(len as u64));
@@ -16,30 +24,50 @@ pub fn sha3(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         keccak256(interpreter.memory.get_slice(from, len))
     };
 
-    push_b256!(interpreter, hash);
+    interpreter.stack.push_b256(hash).map_err(EvmError::from)
 }
 
-pub fn address(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn address<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
-    push_b256!(interpreter, B256::from(interpreter.contract.address));
+    interpreter
+        .stack
+        .push_b256(B256::from(interpreter.contract.address))
+        .map_err(EvmError::from)
 }
 
-pub fn caller(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn caller<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
-    push_b256!(interpreter, B256::from(interpreter.contract.caller));
+    interpreter
+        .stack
+        .push_b256(B256::from(interpreter.contract.caller))
+        .map_err(EvmError::from)
 }
 
-pub fn codesize(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn codesize<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, U256::from(interpreter.contract.bytecode.len()));
+
+    Ok(())
 }
 
-pub fn codecopy(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn codecopy<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop!(interpreter, memory_offset, code_offset, len);
     let len = as_usize_or_fail!(interpreter, len, Return::OutOfGas);
     gas_or_fail!(interpreter, gas::verylowcopy_cost(len as u64));
     if len == 0 {
-        return;
+        return Ok(());
     }
     let memory_offset = as_usize_or_fail!(interpreter, memory_offset, Return::OutOfGas);
     let code_offset = as_usize_saturated!(code_offset);
@@ -52,9 +80,14 @@ pub fn codecopy(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         len,
         interpreter.contract.bytecode.original_bytecode_slice(),
     );
+
+    Ok(())
 }
 
-pub fn calldataload(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn calldataload<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::VERYLOW);
     pop!(interpreter, index);
     let index = as_usize_saturated!(index);
@@ -68,25 +101,38 @@ pub fn calldataload(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         B256::zero()
     };
 
-    push_b256!(interpreter, load);
+    interpreter.stack.push_b256(load).map_err(EvmError::from)
 }
 
-pub fn calldatasize(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn calldatasize<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, U256::from(interpreter.contract.input.len()));
+
+    Ok(())
 }
 
-pub fn callvalue(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn callvalue<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, interpreter.contract.value);
+
+    Ok(())
 }
 
-pub fn calldatacopy(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn calldatacopy<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop!(interpreter, memory_offset, data_offset, len);
     let len = as_usize_or_fail!(interpreter, len, Return::OutOfGas);
     gas_or_fail!(interpreter, gas::verylowcopy_cost(len as u64));
     if len == 0 {
-        return;
+        return Ok(());
     }
     let memory_offset = as_usize_or_fail!(interpreter, memory_offset, Return::OutOfGas);
     let data_offset = as_usize_saturated!(data_offset);
@@ -96,9 +142,14 @@ pub fn calldatacopy(interpreter: &mut Interpreter, _host: &mut dyn Host) {
     interpreter
         .memory
         .set_data(memory_offset, data_offset, len, &interpreter.contract.input);
+
+    Ok(())
 }
 
-pub fn returndatasize<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn returndatasize<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     // EIP-211: New opcodes: RETURNDATASIZE and RETURNDATACOPY
     check!(interpreter, SPEC::enabled(BYZANTIUM));
@@ -106,9 +157,14 @@ pub fn returndatasize<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn
         interpreter,
         U256::from(interpreter.return_data_buffer.len())
     );
+
+    Ok(())
 }
 
-pub fn returndatacopy<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn returndatacopy<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // EIP-211: New opcodes: RETURNDATASIZE and RETURNDATACOPY
     check!(interpreter, SPEC::enabled(BYZANTIUM));
     pop!(interpreter, memory_offset, offset, len);
@@ -117,8 +173,7 @@ pub fn returndatacopy<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn
     let data_offset = as_usize_saturated!(offset);
     let (data_end, overflow) = data_offset.overflowing_add(len);
     if overflow || data_end > interpreter.return_data_buffer.len() {
-        interpreter.instruction_result = Return::OutOfOffset;
-        return;
+        return Err(EvmError::from(ExceptionalHalt::OutOfBoundsRead));
     }
     if len != 0 {
         let memory_offset = as_usize_or_fail!(interpreter, memory_offset, Return::OutOfGas);
@@ -128,12 +183,17 @@ pub fn returndatacopy<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn
             &interpreter.return_data_buffer[data_offset..data_end],
         );
     }
+
+    Ok(())
 }
 
-pub fn gas(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn gas<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, U256::from(interpreter.gas.remaining()));
-    if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
+
+    Ok(())
 }

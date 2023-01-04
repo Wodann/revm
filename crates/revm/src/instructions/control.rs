@@ -1,6 +1,18 @@
-use crate::{gas, interpreter::Interpreter, Host, Return, Spec, SpecId::*, U256};
+use crate::{
+    evm_impl::{EvmError, EvmResult, ExceptionalHalt},
+    gas,
+    interpreter::Interpreter,
+    Host, Return, Spec,
+    SpecId::*,
+    U256,
+};
 
-pub fn jump(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+use super::Eval;
+
+pub fn jump<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::MID);
     pop!(interpreter, dest);
     let dest = as_usize_or_fail!(interpreter, dest, Return::InvalidJump);
@@ -10,11 +22,16 @@ pub fn jump(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         interpreter.instruction_pointer =
             unsafe { interpreter.contract.bytecode.as_ptr().add(dest) };
     } else {
-        interpreter.instruction_result = Return::InvalidJump;
+        return Err(EvmError::from(ExceptionalHalt::InvalidJump));
     }
+
+    Ok(())
 }
 
-pub fn jumpi(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn jumpi<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::HIGH);
     pop!(interpreter, dest, value);
     if value != U256::ZERO {
@@ -25,27 +42,40 @@ pub fn jumpi(interpreter: &mut Interpreter, _host: &mut dyn Host) {
             interpreter.instruction_pointer =
                 unsafe { interpreter.contract.bytecode.as_ptr().add(dest) };
         } else {
-            interpreter.instruction_result = Return::InvalidJump
+            return Err(EvmError::from(ExceptionalHalt::InvalidJump));
         }
-    } else if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
+    } else {
         // if we are not doing jump, add next gas block.
-        interpreter.instruction_result = ret;
+        interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
     }
+
+    Ok(())
 }
 
-pub fn jumpdest(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn jumpdest<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     gas!(interpreter, gas::JUMPDEST);
-    if let Some(ret) = interpreter.add_next_gas_block(interpreter.program_counter() - 1) {
-        interpreter.instruction_result = ret;
-    }
+    interpreter.add_next_gas_block(interpreter.program_counter() - 1)?;
+
+    Ok(())
 }
 
-pub fn pc(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn pc<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // gas!(interp, gas::BASE);
     push!(interpreter, U256::from(interpreter.program_counter() - 1));
+
+    Ok(())
 }
 
-pub fn ret(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn ret<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<Eval, H::DatabaseError> {
     // zero gas cost gas!(interp,gas::ZERO);
     pop!(interpreter, start, len);
     let len = as_usize_or_fail!(interpreter, len, Return::OutOfGas);
@@ -56,10 +86,13 @@ pub fn ret(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         memory_resize!(interpreter, offset, len);
         interpreter.return_range = offset..(offset + len);
     }
-    interpreter.instruction_result = Return::Return;
+    Ok(Eval::Return)
 }
 
-pub fn revert<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn revert<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<Eval, H::DatabaseError> {
     // zero gas cost gas!(interp,gas::ZERO);
     // EIP-140: REVERT instruction
     check!(interpreter, SPEC::enabled(BYZANTIUM));
@@ -72,5 +105,5 @@ pub fn revert<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
         memory_resize!(interpreter, offset, len);
         interpreter.return_range = offset..(offset + len);
     }
-    interpreter.instruction_result = Return::Revert;
+    Ok(Eval::Revert)
 }

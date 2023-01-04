@@ -1,80 +1,133 @@
 use super::i256::{i256_cmp, i256_sign, two_compl, Sign};
-use crate::{Host, Interpreter, Return, Spec, SpecId::CONSTANTINOPLE, U256};
+use crate::{evm_impl::EvmResult, Host, Interpreter, Return, Spec, SpecId::CONSTANTINOPLE, U256};
 use core::cmp::Ordering;
 use std::ops::{BitAnd, BitOr, BitXor};
 
-pub fn lt(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn lt<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = if op1.lt(op2) {
         U256::from(1)
     } else {
         U256::ZERO
     };
+
+    Ok(())
 }
 
-pub fn gt(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn gt<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = if op1.gt(op2) {
         U256::from(1)
     } else {
         U256::ZERO
     };
+
+    Ok(())
 }
 
-pub fn slt(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn slt<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = if i256_cmp(op1, *op2) == Ordering::Less {
         U256::from(1)
     } else {
         U256::ZERO
-    }
+    };
+
+    Ok(())
 }
 
-pub fn sgt(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn sgt<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = if i256_cmp(op1, *op2) == Ordering::Greater {
         U256::from(1)
     } else {
         U256::ZERO
     };
+
+    Ok(())
 }
 
-pub fn eq(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn eq<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = if op1.eq(op2) {
         U256::from(1)
     } else {
         U256::ZERO
     };
+
+    Ok(())
 }
 
-pub fn iszero(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn iszero<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1);
     *op1 = if *op1 == U256::ZERO {
         U256::from(1)
     } else {
         U256::ZERO
     };
+
+    Ok(())
 }
-pub fn bitand(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn bitand<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.bitand(*op2);
+
+    Ok(())
 }
-pub fn bitor(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn bitor<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.bitor(*op2);
+
+    Ok(())
 }
-pub fn bitxor(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn bitxor<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     *op2 = op1.bitxor(*op2);
+
+    Ok(())
 }
 
-pub fn not(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn not<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1);
     *op1 = !*op1;
+
+    Ok(())
 }
 
-pub fn byte(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn byte<H: Host>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     pop_top!(interpreter, op1, op2);
     let mut ret = U256::ZERO;
 
@@ -89,23 +142,38 @@ pub fn byte(interpreter: &mut Interpreter, _host: &mut dyn Host) {
     }
 
     *op2 = ret;
+
+    Ok(())
 }
 
-pub fn shl<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn shl<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // EIP-145: Bitwise shifting instructions in EVM
     check!(interpreter, SPEC::enabled(CONSTANTINOPLE));
     pop_top!(interpreter, op1, op2);
     *op2 <<= as_usize_saturated!(op1);
+
+    Ok(())
 }
 
-pub fn shr<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn shr<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // EIP-145: Bitwise shifting instructions in EVM
     check!(interpreter, SPEC::enabled(CONSTANTINOPLE));
     pop_top!(interpreter, op1, op2);
     *op2 >>= as_usize_saturated!(op1);
+
+    Ok(())
 }
 
-pub fn sar<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
+pub fn sar<H: Host, SPEC: Spec>(
+    interpreter: &mut Interpreter,
+    _host: &mut H,
+) -> EvmResult<(), H::DatabaseError> {
     // EIP-145: Bitwise shifting instructions in EVM
     check!(interpreter, SPEC::enabled(CONSTANTINOPLE));
     pop_top!(interpreter, op1, op2);
@@ -132,4 +200,6 @@ pub fn sar<SPEC: Spec>(interpreter: &mut Interpreter, _host: &mut dyn Host) {
             }
         }
     };
+
+    Ok(())
 }

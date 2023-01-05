@@ -2,12 +2,10 @@
 //! It is great tool if some debugging is needed.
 //!
 use crate::{
-    bits::B160,
     inspectors::GasInspector,
-    instructions::Eval,
-    opcode::{self},
-    Bytes, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, EVMData, Gas, Inspector,
-    Interpreter, Return,
+    instructions::{Eval, Reason},
+    opcode, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, EVMData, Inspector,
+    Interpreter,
 };
 use hex;
 #[derive(Clone, Default)]
@@ -24,10 +22,10 @@ where
         interp: &mut Interpreter,
         data: &mut EVMData<'_, DB>,
         is_static: bool,
-    ) -> Return {
+    ) -> Eval {
         self.gas_inspector
             .initialize_interp(interp, data, is_static);
-        Return::Continue
+        Eval::Continue
     }
 
     // get opcode by calling `interp.contract.opcode(interp.program_counter())`.
@@ -37,7 +35,7 @@ where
         interp: &mut Interpreter,
         data: &mut EVMData<'_, DB>,
         is_static: bool,
-    ) -> Return {
+    ) -> Eval {
         let opcode = interp.current_opcode();
         let opcode_str = opcode::OPCODE_JUMPMAP[opcode as usize];
 
@@ -59,7 +57,7 @@ where
 
         self.gas_inspector.step(interp, data, is_static);
 
-        Return::Continue
+        Eval::Continue
     }
 
     fn step_end(
@@ -67,19 +65,19 @@ where
         interp: &mut Interpreter,
         data: &mut EVMData<'_, DB>,
         is_static: bool,
-        eval: Return,
-    ) -> Return {
+        eval: Eval,
+    ) -> Eval {
         self.gas_inspector.step_end(interp, data, is_static, eval);
-        Return::Continue
+        Eval::Continue
     }
 
     fn call_end(
         &mut self,
         data: &mut EVMData<'_, DB>,
         inputs: &CallInputs,
-        outputs: Result<CallOutputs, DB::Error>,
+        outputs: CallOutputs<Reason>,
         is_static: bool,
-    ) -> Result<CallOutputs, DB::Error> {
+    ) -> CallOutputs<Reason> {
         self.gas_inspector
             .call_end(data, inputs, outputs.clone(), is_static);
         outputs
@@ -89,8 +87,8 @@ where
         &mut self,
         data: &mut EVMData<'_, DB>,
         inputs: &CreateInputs,
-        outputs: CreateOutputs,
-    ) -> CreateOutputs {
+        outputs: CreateOutputs<Reason>,
+    ) -> CreateOutputs<Reason> {
         self.gas_inspector.create_end(data, inputs, outputs.clone());
         outputs
     }
@@ -100,7 +98,7 @@ where
         _data: &mut EVMData<'_, DB>,
         inputs: &mut CallInputs,
         is_static: bool,
-    ) -> CallOutputs {
+    ) -> CallOutputs<Reason> {
         println!(
             "SM CALL:   {:?},context:{:?}, is_static:{:?}, transfer:{:?}, input_size:{:?}",
             inputs.contract,
@@ -113,7 +111,11 @@ where
         CallOutputs::default()
     }
 
-    fn create(&mut self, _data: &mut EVMData<'_, DB>, inputs: &mut CreateInputs) -> CreateOutputs {
+    fn create(
+        &mut self,
+        _data: &mut EVMData<'_, DB>,
+        inputs: &mut CreateInputs,
+    ) -> CreateOutputs<Eval> {
         println!(
             "CREATE CALL: caller:{:?}, scheme:{:?}, value:{:?}, init_code:{:?}, gas:{:?}",
             inputs.caller,

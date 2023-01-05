@@ -3,6 +3,7 @@ use crate::{
     bits::{B160, B256},
     evm_impl::{EvmError, EvmResult, ExceptionalHalt},
     gas::{self, COLD_ACCOUNT_ACCESS_COST, WARM_STORAGE_READ_COST},
+    instructions::Reason,
     interpreter::Interpreter,
     return_ok, return_revert, CallContext, CallInputs, CallOutputs, CallScheme, CreateInputs,
     CreateOutputs, CreateScheme, Host, Return, Spec,
@@ -289,7 +290,7 @@ pub fn create<const IS_CREATE2: bool, H: Host, SPEC: Spec>(
     } = host.create(&mut create_input)?;
     interpreter.return_data_buffer = match eval {
         // Save data to return data buffer if the create reverted
-        return_revert!() => out,
+        Reason::Success(Eval::Revert) => out,
         // Otherwise clear it
         _ => Bytes::new(),
     };

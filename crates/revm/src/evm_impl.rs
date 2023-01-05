@@ -9,7 +9,7 @@ use crate::{
     models::SelfDestructResult,
     precompiles, return_ok, return_revert, AnalysisKind, CallContext, CallInputs, CallOutputs,
     CallScheme, CreateInputs, CreateOutputs, CreateScheme, Env, ExecutionResult, Gas, Inspector,
-    Log, Return, Spec,
+    Log, Spec,
     SpecId::{self, *},
     TransactOut, TransactTo, Transfer, B160, B256, KECCAK_EMPTY, U256,
 };
@@ -35,7 +35,7 @@ pub struct EVMImpl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> {
 
 /// Indicates that the EVM has experienced an exceptional halt. This causes execution to
 /// immediately end with all gas being consumed.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ExceptionalHalt {
     #[error("The new contract code starts with 0xEF")]
     InvalidContractPrefix,
@@ -82,7 +82,7 @@ impl From<precompiles::Error> for ExceptionalHalt {
 }
 
 /// All Ethereum errors that might occur by the specification during normal operation.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum EthereumError {
     #[error(transparent)]
     ExceptionalHalt(#[from] ExceptionalHalt),
@@ -114,6 +114,8 @@ pub type EvmResult<T, E> = Result<T, EvmError<E>>;
 pub enum TransactionError<DE: Debug> {
     #[error("Transaction's gas limit is more than block's gas limit")]
     CallerGasLimitMoreThanBlock,
+    #[error("A contract already exists for the provided create address")]
+    CreateCollision,
     #[error("The database returned an error")]
     DatabaseFailure(#[from] DE),
     #[error("Transaction's priority fee is greater than max fee")]
@@ -124,7 +126,7 @@ pub enum TransactionError<DE: Debug> {
     LackOfFundForGasLimit,
     #[error("Incrementing nonce causes arithmetic overflow")]
     NonceOverflow(B160),
-    #[error("Account is out of funds")]
+    #[error("Caller is out of funds")]
     OutOfFund,
     #[error("Transaction is out of gas")]
     OutOfGas,
@@ -156,7 +158,6 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact
         let value = self.data.env.tx.value;
         let data = self.data.env.tx.data.clone();
         let gas_limit = self.data.env.tx.gas_limit;
-        let exit = |reason: Return| (ExecutionResult::new_with_reason(reason), State::new());
 
         if GSPEC::enabled(MERGE) && self.data.env.block.prevrandao.is_none() {
             return Err(TransactionError::PrevrandaoNotSet);
@@ -288,11 +289,11 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact
                     is_static: false,
                 };
                 let CallOutputs {
-                    exit_reason: eval,
+                    exit_reason,
                     gas,
-                    return_value: out,
+                    return_value,
                 } = self.call_inner(&mut call_input)?;
-                (eval, gas, TransactOut::Call(out))
+                (exit_reason, gas, TransactOut::Call(return_value))
             }
             TransactTo::Create(scheme) => {
                 let mut create_input = CreateInputs {
@@ -302,8 +303,13 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact
                     init_code: data,
                     gas_limit,
                 };
-                let (exit, address, ret_gas, bytes) = self.create_inner(&mut create_input)?;
-                (exit, ret_gas, TransactOut::Create(bytes, address))
+                let CreateOutputs {
+                    exit_reason,
+                    address,
+                    gas,
+                    return_value,
+                } = self.create_inner(&mut create_input)?;
+                (exit_reason, gas, TransactOut::Create(return_value, address))
             }
         };
 
@@ -313,7 +319,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact
                     gas.erase_cost(ret_gas.remaining());
                     gas.record_refund(ret_gas.refunded());
                 }
-                Eval::Revert => {
+                return_revert!() => {
                     gas.erase_cost(ret_gas.remaining());
                 }
                 _ => {}
@@ -503,12 +509,16 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
     fn create_inner(
         &mut self,
         inputs: &mut CreateInputs,
-    ) -> EvmResult<CreateOutputs<Reason>, DB::Error> {
+    ) -> Result<CreateOutputs<Reason>, TransactionError<DB::Error>> {
         // Call inspector
         if INSPECT {
             let outputs = self.inspector.create(&mut self.data, inputs);
             if outputs.exit_reason != Eval::Continue {
-                return Ok(self.inspector.create_end(&mut self.data, inputs, outputs));
+                return Ok(self.inspector.create_end(
+                    &mut self.data,
+                    inputs,
+                    CreateOutputs::from(outputs),
+                ));
             }
         }
 
@@ -518,7 +528,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         // Check depth of calls
         if self.data.journaled_state.depth() > interpreter::CALL_STACK_LIMIT {
             return Ok(CreateOutputs {
-                exit_reason: Reason::Failure(ExceptionalHalt::CallTooDeep),
+                exit_reason: Reason::from(ExceptionalHalt::StackDepthLimit),
                 address: None,
                 gas,
                 return_value: Bytes::new(),
@@ -527,12 +537,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         // Check balance of caller and value. Do this before increasing nonce
         match self.balance(inputs.caller) {
             Ok(i) if i.0 < inputs.value => {
-                return Ok(CreateOutputs {
-                    exit_reason: Reason::OutOfFund,
-                    address: None,
-                    gas,
-                    return_value: Bytes::new(),
-                })
+                return Err(TransactionError::OutOfFund);
             }
             Ok(_) => (),
             Err(e) => return Err(TransactionError::DatabaseFailure(e)),
@@ -555,7 +560,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         let address = Some(created_address);
 
         // Load account so that it will be hot
-        self.load_account(created_address);
+        self.load_account(created_address)?;
 
         // Enter subroutine
         let checkpoint = self.data.journaled_state.checkpoint();
@@ -568,7 +573,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         ) {
             Ok(false) => {
                 self.data.journaled_state.checkpoint_revert(checkpoint);
-                return Ok((Return::CreateCollision, address, gas, Bytes::new()));
+                return Err(TransactionError::CreateCollision);
             }
             Err(e) => return Err(TransactionError::DatabaseFailure(e)),
             Ok(true) => (),
@@ -631,7 +636,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                 {
                     self.data.journaled_state.checkpoint_revert(checkpoint);
                     return Ok(CreateOutputs {
-                        exit_reason: Reason::Failure(ExceptionalHalt::InvalidContractPrefix),
+                        exit_reason: Reason::from(ExceptionalHalt::InvalidContractPrefix),
                         address,
                         gas,
                         return_value,
@@ -646,7 +651,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                 {
                     self.data.journaled_state.checkpoint_revert(checkpoint);
                     return Ok(CreateOutputs {
-                        exit_reason: Reason::Failure(ExceptionalHalt::OutOfGas),
+                        exit_reason: Reason::from(ExceptionalHalt::OutOfGas),
                         address,
                         gas,
                         return_value,
@@ -662,7 +667,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                         if GSPEC::enabled(HOMESTEAD) {
                             self.data.journaled_state.checkpoint_revert(checkpoint);
                             return Ok(CreateOutputs {
-                                exit_reason: Reason::Failure(ExceptionalHalt::OutOfGas),
+                                exit_reason: Reason::from(ExceptionalHalt::OutOfGas),
                                 address,
                                 gas: interpreter.gas,
                                 return_value,
@@ -712,16 +717,13 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         })
     }
 
-    fn call_inner(
-        &mut self,
-        inputs: &mut CallInputs,
-    ) -> Result<CallOutputs<Reason>, TransactionError<DB::Error>> {
+    fn call_inner(&mut self, inputs: &mut CallInputs) -> Result<CallOutputs<Reason>, DB::Error> {
         // Call the inspector
         if INSPECT {
             let outputs = self
                 .inspector
                 .call(&mut self.data, inputs, inputs.is_static);
-            if outputs.exit_reason != Eval::Continue {
+            if outputs.exit_reason != Reason::Success(Eval::Continue) {
                 return Ok(self.inspector.call_end(
                     &mut self.data,
                     inputs,
@@ -729,6 +731,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                         exit_reason: Reason::from(outputs.exit_reason),
                         ..outputs
                     },
+                    inputs.is_static,
                 ));
             }
         }
@@ -743,7 +746,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         // Check depth
         if self.data.journaled_state.depth() > interpreter::CALL_STACK_LIMIT {
             let outputs = CallOutputs {
-                exit_reason: Reason::Failure(ExceptionalHalt::StackDepthLimit),
+                exit_reason: Reason::from(ExceptionalHalt::StackDepthLimit),
                 gas,
                 return_value: Bytes::new(),
             };
@@ -777,7 +780,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
         )?;
 
         // Call precompiles
-        let (ret, gas, out) = if let Some(precompile) = self.precompiles.get(&inputs.contract) {
+        let outputs = if let Some(precompile) = self.precompiles.get(&inputs.contract) {
             let out = match precompile {
                 Precompile::Standard(fun) => fun(inputs.input.as_ref(), inputs.gas_limit),
                 Precompile::Custom(fun) => fun(inputs.input.as_ref(), inputs.gas_limit),
@@ -794,7 +797,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                     } else {
                         self.data.journaled_state.checkpoint_revert(checkpoint);
                         CallOutputs {
-                            exit_reason: Reason::Failure(ExceptionalHalt::OutOfGas),
+                            exit_reason: Reason::from(ExceptionalHalt::OutOfGas),
                             gas,
                             return_value: Bytes::new(),
                         }
@@ -842,14 +845,18 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
                 self.data.journaled_state.checkpoint_revert(checkpoint);
             }
 
-            (exit_reason, interpreter.gas, interpreter.return_value())
+            CallOutputs {
+                exit_reason,
+                gas: interpreter.gas,
+                return_value: interpreter.return_value(),
+            }
         };
 
         Ok(if INSPECT {
             self.inspector
-                .call_end(&mut self.data, inputs, gas, ret, out, inputs.is_static)
+                .call_end(&mut self.data, inputs, outputs, inputs.is_static)
         } else {
-            (ret, gas, out)
+            outputs
         })
     }
 }
@@ -859,11 +866,11 @@ impl<'a, GSPEC: Spec, DB: Database + 'a, const INSPECT: bool> Host
 {
     type DatabaseError = DB::Error;
 
-    fn step(&mut self, interp: &mut Interpreter, is_static: bool) -> Return {
+    fn step(&mut self, interp: &mut Interpreter, is_static: bool) -> Eval {
         self.inspector.step(interp, &mut self.data, is_static)
     }
 
-    fn step_end(&mut self, interp: &mut Interpreter, is_static: bool, ret: Return) -> Return {
+    fn step_end(&mut self, interp: &mut Interpreter, is_static: bool, ret: Eval) -> Eval {
         self.inspector
             .step_end(interp, &mut self.data, is_static, ret)
     }
@@ -965,11 +972,14 @@ impl<'a, GSPEC: Spec, DB: Database + 'a, const INSPECT: bool> Host
     fn create(
         &mut self,
         inputs: &mut CreateInputs,
-    ) -> EvmResult<CreateOutputs, Self::DatabaseError> {
+    ) -> TransactionResult<CreateOutputs<Reason>, Self::DatabaseError> {
         self.create_inner(inputs)
     }
 
-    fn call(&mut self, inputs: &mut CallInputs) -> EvmResult<CallOutputs, Self::DatabaseError> {
+    fn call(
+        &mut self,
+        inputs: &mut CallInputs,
+    ) -> TransactionResult<CallOutputs<Reason>, Self::DatabaseError> {
         self.call_inner(inputs)
     }
 }
@@ -999,8 +1009,8 @@ pub fn create2_address(caller: B160, code_hash: B256, salt: U256) -> B160 {
 pub trait Host {
     type DatabaseError: Debug;
 
-    fn step(&mut self, interp: &mut Interpreter, is_static: bool) -> Return;
-    fn step_end(&mut self, interp: &mut Interpreter, is_static: bool, ret: Return) -> Return;
+    fn step(&mut self, interp: &mut Interpreter, is_static: bool) -> Eval;
+    fn step_end(&mut self, interp: &mut Interpreter, is_static: bool, ret: Eval) -> Eval;
 
     fn env(&mut self) -> &mut Env;
 
@@ -1035,7 +1045,10 @@ pub trait Host {
     fn create(
         &mut self,
         inputs: &mut CreateInputs,
-    ) -> EvmResult<CreateOutputs, Self::DatabaseError>;
+    ) -> TransactionResult<CreateOutputs<Reason>, Self::DatabaseError>;
     /// Invoke a call operation.
-    fn call(&mut self, input: &mut CallInputs) -> EvmResult<CallOutputs, Self::DatabaseError>;
+    fn call(
+        &mut self,
+        input: &mut CallInputs,
+    ) -> TransactionResult<CallOutputs<Reason>, Self::DatabaseError>;
 }

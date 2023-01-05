@@ -21,7 +21,17 @@ pub use opcode::{OpCode, OPCODE_JUMPMAP};
 #[macro_export]
 macro_rules! return_ok {
     () => {
-        Eval::Continue | Eval::Stop | Eval::Return | Eval::SelfDestruct
+        Reason::Success(Eval::Continue)
+            | Reason::Success(Eval::Stop)
+            | Reason::Success(Eval::Return)
+            | Reason::Success(Eval::SelfDestruct)
+    };
+}
+
+#[macro_export]
+macro_rules! return_revert {
+    () => {
+        Reason::Success(Eval::Revert)
     };
 }
 
@@ -45,10 +55,16 @@ impl Default for Eval {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reason {
     Success(Eval),
     Failure(EthereumError),
+}
+
+impl Default for Reason {
+    fn default() -> Self {
+        Self::Success(Eval::Continue)
+    }
 }
 
 impl From<Eval> for Reason {

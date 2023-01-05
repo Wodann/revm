@@ -3,9 +3,9 @@ use core::cmp::min;
 use crate::{
     alloc::vec::Vec,
     bits::{B160, B256},
-    instructions::Eval,
+    instructions::Reason,
     interpreter::bytecode::Bytecode,
-    Gas, Return, SpecId, U256,
+    Gas, SpecId, U256,
 };
 use bytes::Bytes;
 use hex_literal::hex;
@@ -129,6 +129,20 @@ pub struct CreateOutputs<R> {
     pub address: Option<B160>,
     pub gas: Gas,
     pub return_value: Bytes,
+}
+
+impl<R> CreateOutputs<R> {
+    pub fn from<T>(other: CreateOutputs<T>) -> Self
+    where
+        R: From<T>,
+    {
+        Self {
+            exit_reason: R::from(other.exit_reason),
+            address: other.address,
+            gas: other.gas,
+            return_value: other.return_value,
+        }
+    }
 }
 
 impl<R: Default> Default for CreateOutputs<R> {
@@ -486,7 +500,7 @@ pub(crate) mod serde_hex_bytes_opt {
 
 #[derive(Clone, Debug)]
 pub struct ExecutionResult {
-    pub exit_reason: Return,
+    pub exit_reason: Reason,
     pub out: TransactOut,
     pub gas_used: u64,
     pub gas_refunded: u64,
@@ -494,9 +508,9 @@ pub struct ExecutionResult {
 }
 
 impl ExecutionResult {
-    pub fn new_with_reason(reason: Return) -> ExecutionResult {
+    pub fn new_with_reason(exit_reason: Reason) -> ExecutionResult {
         ExecutionResult {
-            exit_reason: reason,
+            exit_reason,
             out: TransactOut::None,
             gas_used: 0,
             gas_refunded: 0,

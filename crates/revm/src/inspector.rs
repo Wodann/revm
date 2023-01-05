@@ -2,7 +2,7 @@ use crate::{
     bits::{B160, B256},
     evm_impl::EVMData,
     instructions::{Eval, Reason},
-    CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Gas, Interpreter, Return,
+    CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Interpreter,
 };
 use auto_impl::auto_impl;
 use bytes::Bytes;
@@ -94,9 +94,9 @@ pub trait Inspector<DB: Database> {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CallInputs,
-        outputs: Result<CallOutputs, DB::Error>,
+        outputs: CallOutputs<Reason>,
         _is_static: bool,
-    ) -> Result<CallOutputs, DB::Error> {
+    ) -> CallOutputs<Reason> {
         outputs
     }
 
@@ -119,8 +119,8 @@ pub trait Inspector<DB: Database> {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CreateInputs,
-        outputs: CreateOutputs<Eval>,
-    ) -> CreateOutputs<Eval> {
+        outputs: CreateOutputs<Reason>,
+    ) -> CreateOutputs<Reason> {
         outputs
     }
 

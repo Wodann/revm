@@ -1,8 +1,9 @@
 //! GasIspector. Helper Inspector to calculte gas for others.
 //!
 use crate::{
-    evm_impl::EVMData, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Inspector,
-    Return,
+    evm_impl::EVMData,
+    instructions::{Eval, Reason},
+    CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, Inspector,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -30,10 +31,10 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         interp: &mut crate::Interpreter,
         _data: &mut EVMData<'_, DB>,
         _is_static: bool,
-    ) -> Return {
+    ) -> Eval {
         self.full_gas_block = interp.contract.first_gas_block();
         self.gas_remaining = interp.gas.limit();
-        Return::Continue
+        Eval::Continue
     }
 
     // get opcode by calling `interp.contract.opcode(interp.program_counter())`.
@@ -45,7 +46,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         interp: &mut crate::Interpreter,
         data: &mut EVMData<'_, DB>,
         _is_static: bool,
-    ) -> Return {
+    ) -> Eval {
         let op = interp.current_opcode();
 
         // calculate gas_block
@@ -63,7 +64,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
             self.reduced_gas_block += info.get_gas() as u64;
         }
 
-        Return::Continue
+        Eval::Continue
     }
 
     #[cfg(not(feature = "no_gas_measuring"))]
@@ -72,8 +73,8 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         interp: &mut crate::Interpreter,
         _data: &mut EVMData<'_, DB>,
         _is_static: bool,
-        _eval: Return,
-    ) -> Return {
+        _eval: Eval,
+    ) -> Eval {
         let pc = interp.program_counter();
         if let Some(was_pc) = self.was_jumpi {
             if let Some(new_pc) = pc.checked_sub(1) {
@@ -92,16 +93,16 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         }
         self.gas_remaining =
             interp.gas.remaining() + (self.full_gas_block - self.reduced_gas_block);
-        Return::Continue
+        Eval::Continue
     }
 
     fn call_end(
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CallInputs,
-        outputs: Result<CallOutputs, DB::Error>,
+        outputs: CallOutputs<Reason>,
         _is_static: bool,
-    ) -> Result<CallOutputs, DB::Error> {
+    ) -> CallOutputs<Reason> {
         self.was_return = true;
         outputs
     }
@@ -110,8 +111,8 @@ impl<DB: Database> Inspector<DB> for GasInspector {
         &mut self,
         _data: &mut EVMData<'_, DB>,
         _inputs: &CreateInputs,
-        outputs: CreateOutputs,
-    ) -> CreateOutputs {
+        outputs: CreateOutputs<Reason>,
+    ) -> CreateOutputs<Reason> {
         self.was_return = true;
         outputs
     }
@@ -119,13 +120,13 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::BenchmarkDB;
-    use crate::instructions::Eval;
     use crate::{
-        inspectors::GasInspector, opcode, Bytecode, CallInputs, CreateInputs, Database, EVMData,
-        Gas, Inspector, Interpreter, OpCode, Return, TransactTo, B160, B256,
+        db::BenchmarkDB,
+        inspectors::GasInspector,
+        instructions::{Eval, Reason},
+        opcode, Bytecode, CallInputs, CallOutputs, CreateInputs, CreateOutputs, Database, EVMData,
+        Gas, Inspector, Interpreter, OpCode, TransactTo, B160, B256,
     };
-    use crate::{CallOutputs, CreateOutputs};
     use bytes::Bytes;
     use hex_literal::hex;
 
@@ -145,10 +146,10 @@ mod tests {
             interp: &mut Interpreter,
             data: &mut EVMData<'_, DB>,
             is_static: bool,
-        ) -> Return {
+        ) -> Eval {
             self.gas_inspector
                 .initialize_interp(interp, data, is_static);
-            Return::Continue
+            Eval::Continue
         }
 
         fn step(
@@ -156,10 +157,10 @@ mod tests {
             interp: &mut Interpreter,
             data: &mut EVMData<'_, DB>,
             is_static: bool,
-        ) -> Return {
+        ) -> Eval {
             self.pc = interp.program_counter();
             self.gas_inspector.step(interp, data, is_static);
-            Return::Continue
+            Eval::Continue
         }
 
         fn log(
@@ -177,8 +178,8 @@ mod tests {
             interp: &mut Interpreter,
             data: &mut EVMData<'_, DB>,
             is_static: bool,
-            eval: Return,
-        ) -> Return {
+            eval: Eval,
+        ) -> Eval {
             self.gas_inspector.step_end(interp, data, is_static, eval);
             self.gas_remaining_steps
                 .push((self.pc, self.gas_inspector.gas_remaining()));
@@ -190,11 +191,11 @@ mod tests {
             data: &mut EVMData<'_, DB>,
             call: &mut CallInputs,
             is_static: bool,
-        ) -> CallOutputs {
+        ) -> CallOutputs<Reason> {
             self.gas_inspector.call(data, call, is_static);
 
             CallOutputs {
-                exit_reason: Eval::Continue,
+                exit_reason: Reason::Success(Eval::Continue),
                 gas: Gas::new(call.gas_limit),
                 return_value: Bytes::new(),
             }
@@ -204,15 +205,19 @@ mod tests {
             &mut self,
             data: &mut EVMData<'_, DB>,
             inputs: &CallInputs,
-            outputs: Result<CallOutputs, DB::Error>,
+            outputs: CallOutputs<Reason>,
             is_static: bool,
-        ) -> Result<CallOutputs, DB::Error> {
+        ) -> CallOutputs<Reason> {
             self.gas_inspector
                 .call_end(data, inputs, outputs.clone(), is_static);
             outputs
         }
 
-        fn create(&mut self, data: &mut EVMData<'_, DB>, call: &mut CreateInputs) -> CreateOutputs {
+        fn create(
+            &mut self,
+            data: &mut EVMData<'_, DB>,
+            call: &mut CreateInputs,
+        ) -> CreateOutputs<Eval> {
             self.gas_inspector.create(data, call);
 
             CreateOutputs {
@@ -227,8 +232,8 @@ mod tests {
             &mut self,
             data: &mut EVMData<'_, DB>,
             inputs: &CreateInputs,
-            outputs: CreateOutputs,
-        ) -> CreateOutputs {
+            outputs: CreateOutputs<Reason>,
+        ) -> CreateOutputs<Reason> {
             self.gas_inspector.create_end(data, inputs, outputs.clone());
             outputs
         }

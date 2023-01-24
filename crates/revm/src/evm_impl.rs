@@ -225,7 +225,11 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
                 logs,
                 output,
             },
-            SuccessOrHalt::Revert => ExecutionResult::Revert { gas_used },
+            SuccessOrHalt::Revert => ExecutionResult::Revert {
+                gas_used,
+                logs,
+                output,
+            },
             SuccessOrHalt::Halt(reason) => ExecutionResult::Halt { reason, gas_used },
             SuccessOrHalt::FatalExternalError => {
                 return Err(EVMError::Database(self.data.error.take().unwrap()))

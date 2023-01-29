@@ -8,6 +8,8 @@ compile_error!(
     "`web3db` feature is deprecated, drop-in replacement can be found with feature `ethersdb`"
 );
 
+use std::fmt::Debug;
+
 #[cfg(feature = "ethersdb")]
 pub use ethersdb::EthersDB;
 use hashbrown::HashMap as Map;
@@ -88,5 +90,18 @@ impl<BH: BlockHash, S: State> State for DatabaseComponents<BH, S> {
 impl<BH: BlockHash, S: State + StateCommit> StateCommit for DatabaseComponents<BH, S> {
     fn commit(&mut self, changes: Map<B160, Account>) {
         self.state.commit(changes)
+    }
+}
+
+impl<BHE, SE> Debug for ComponentError<BHE, SE>
+where
+    BHE: Debug,
+    SE: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BlockHashError(arg0) => f.debug_tuple("BlockHashError").field(arg0).finish(),
+            Self::StateError(arg0) => f.debug_tuple("StateError").field(arg0).finish(),
+        }
     }
 }

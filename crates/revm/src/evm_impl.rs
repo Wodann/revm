@@ -120,7 +120,11 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
         // Check if account has enough balance for gas_limit*gas_price and value transfer.
         // Transfer will be done inside `*_inner` functions.
         if payment_value + value > *caller_balance && !disable_balance_check {
-            return Err(InvalidTransaction::LackOfFundForGasLimit.into());
+            return Err(InvalidTransaction::LackOfFundForGasLimit {
+                gas_limit: payment_value + value,
+                balance: *caller_balance,
+            }
+            .into());
         }
 
         // Reduce gas_limit*gas_price amount of caller account.

@@ -10,7 +10,7 @@ pub const ECRECOVER: PrecompileAddress = PrecompileAddress(
 mod secp256k1 {
     use core::convert::TryFrom;
     use k256::{
-        ecdsa::{recoverable, Error},
+        ecdsa::{Error, RecoveryId, Signature, VerifyingKey},
         elliptic_curve::sec1::ToEncodedPoint,
         PublicKey as K256PublicKey,
     };
@@ -19,8 +19,9 @@ mod secp256k1 {
     use crate::B256;
 
     pub fn ecrecover(sig: &[u8; 65], msg: &B256) -> Result<B256, Error> {
-        let sig = recoverable::Signature::try_from(sig.as_ref())?;
-        let verify_key = sig.recover_verifying_key_from_digest_bytes(msg.into())?;
+        let recovery_id = RecoveryId::from_byte(sig[64]).ok_or_else(Error::new)?;
+        let signature = Signature::try_from(&sig[0..64])?;
+        let verify_key = VerifyingKey::recover_from_msg(msg, &signature, recovery_id)?;
         let public_key = K256PublicKey::from(&verify_key);
         let public_key = public_key.to_encoded_point(/* compress = */ false);
         let public_key = public_key.as_bytes();

@@ -22,8 +22,8 @@ pub use db::{
 };
 
 pub use db::{Database, DatabaseCommit, InMemoryDB};
-pub use evm::{evm_inner, new, EVM};
-pub use evm_impl::{EVMData, EVMImpl, Transact};
+pub use evm::{evm_inner, new, EVMData, EVM};
+pub use evm_impl::{EVMImpl, Transact};
 pub use journaled_state::{is_precompile, JournalCheckpoint, JournalEntry, JournaledState};
 
 // reexport `revm_precompiles`

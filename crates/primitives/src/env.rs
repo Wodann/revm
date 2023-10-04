@@ -90,6 +90,9 @@ pub struct CfgEnv {
     /// If some it will effects EIP-170: Contract code size limit. Useful to increase this because of tests.
     /// By default it is 0x6000 (~25kb).
     pub limit_contract_code_size: Option<usize>,
+    /// Override the max initcode size introduced in EIP-3860. This is useful for testing.
+    /// By default it's twice the contract code size limit.
+    pub max_initcode_size: Option<usize>,
     /// Disables the coinbase tip during the finalization of the transaction. This is useful for
     /// rollups that redirect the tip to the sequencer.
     pub disable_coinbase_tip: bool,
@@ -192,6 +195,7 @@ impl Default for CfgEnv {
             spec_id: SpecId::LATEST,
             perf_analyse_created_bytecodes: Default::default(),
             limit_contract_code_size: None,
+            max_initcode_size: None,
             disable_coinbase_tip: false,
             #[cfg(feature = "memory_limit")]
             memory_limit: 2u64.pow(32) - 1,
@@ -296,11 +300,12 @@ impl Env {
 
         // EIP-3860: Limit and meter initcode
         if SPEC::enabled(SpecId::SHANGHAI) && is_create {
-            let max_initcode_size = self
-                .cfg
-                .limit_contract_code_size
-                .map(|limit| limit.saturating_mul(2))
-                .unwrap_or(MAX_INITCODE_SIZE);
+            let max_initcode_size = self.cfg.max_initcode_size.unwrap_or_else(|| {
+                self.cfg
+                    .limit_contract_code_size
+                    .map(|limit| limit.saturating_mul(2))
+                    .unwrap_or(MAX_INITCODE_SIZE)
+            });
             if self.tx.data.len() > max_initcode_size {
                 return Err(InvalidTransaction::CreateInitcodeSizeLimit);
             }

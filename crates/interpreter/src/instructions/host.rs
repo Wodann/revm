@@ -3,7 +3,7 @@ use crate::{
     interpreter::Interpreter,
     primitives::{Bytes, Spec, SpecId::*, B160, B256, U256},
     return_ok, return_revert, CallContext, CallInputs, CallScheme, CreateInputs, CreateScheme,
-    Host, InstructionResult, Transfer, MAX_INITCODE_SIZE,
+    Host, InstructionResult, Transfer,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::cmp::min;
@@ -257,14 +257,7 @@ pub fn prepare_create_inputs<H: Host, const IS_CREATE2: bool, SPEC: Spec>(
     } else {
         // EIP-3860: Limit and meter initcode
         if SPEC::enabled(SHANGHAI) {
-            // Limit is set as double of max contract bytecode size
-            let max_initcode_size = host
-                .env()
-                .cfg
-                .limit_contract_code_size
-                .map(|limit| limit.saturating_mul(2))
-                .unwrap_or(MAX_INITCODE_SIZE);
-            if len > max_initcode_size {
+            if len > host.env().cfg.max_initcode_size() {
                 interpreter.instruction_result = InstructionResult::CreateInitcodeSizeLimit;
                 return;
             }

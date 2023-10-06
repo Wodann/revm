@@ -248,6 +248,9 @@ pub struct CfgEnv {
     /// If some it will effects EIP-170: Contract code size limit. Useful to increase this because of tests.
     /// By default it is 0x6000 (~25kb).
     pub limit_contract_code_size: Option<usize>,
+    /// Override the max initcode size introduced in EIP-3860. This is useful for testing.
+    /// By default it's twice the contract code size limit.
+    pub limit_initcode_size: Option<usize>,
     /// Disables the coinbase tip during the finalization of the transaction. This is useful for
     /// rollups that redirect the tip to the sequencer.
     pub disable_coinbase_tip: bool,
@@ -332,6 +335,14 @@ impl CfgEnv {
     pub fn is_block_gas_limit_disabled(&self) -> bool {
         false
     }
+
+    pub fn max_initcode_size(&self) -> usize {
+        self.limit_initcode_size.unwrap_or_else(|| {
+            self.limit_contract_code_size
+                .map(|limit| limit.saturating_mul(2))
+                .unwrap_or(MAX_INITCODE_SIZE)
+        })
+    }
 }
 
 /// What bytecode analysis to perform.
@@ -354,6 +365,7 @@ impl Default for CfgEnv {
             spec_id: SpecId::LATEST,
             perf_analyse_created_bytecodes: AnalysisKind::default(),
             limit_contract_code_size: None,
+            limit_initcode_size: None,
             disable_coinbase_tip: false,
             #[cfg(feature = "c-kzg")]
             kzg_settings: crate::kzg::EnvKzgSettings::Default,
@@ -475,15 +487,11 @@ impl Env {
         }
 
         // EIP-3860: Limit and meter initcode
-        if SPEC::enabled(SpecId::SHANGHAI) && is_create {
-            let max_initcode_size = self
-                .cfg
-                .limit_contract_code_size
-                .map(|limit| limit.saturating_mul(2))
-                .unwrap_or(MAX_INITCODE_SIZE);
-            if self.tx.data.len() > max_initcode_size {
-                return Err(InvalidTransaction::CreateInitcodeSizeLimit);
-            }
+        if SPEC::enabled(SpecId::SHANGHAI)
+            && is_create
+            && self.tx.data.len() > self.cfg.max_initcode_size()
+        {
+            return Err(InvalidTransaction::CreateInitcodeSizeLimit);
         }
 
         // Check if the transaction's chain id is correct

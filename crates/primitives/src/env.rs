@@ -337,13 +337,11 @@ impl CfgEnv {
     }
 
     pub fn max_initcode_size(&self) -> usize {
-        let result = self.limit_initcode_size.unwrap_or_else(|| {
+        self.limit_initcode_size.unwrap_or_else(|| {
             self.limit_contract_code_size
                 .map(|limit| limit.saturating_mul(2))
                 .unwrap_or(MAX_INITCODE_SIZE)
-        });
-        println!("max initcode size {}", result);
-        result
+        })
     }
 }
 

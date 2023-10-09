@@ -18,7 +18,7 @@ pub trait State {
     fn storage(&mut self, address: B160, index: U256) -> Result<U256, Self::Error>;
 }
 
-#[auto_impl(&, Box, Arc)]
+#[auto_impl(&, & mut, Box, Arc)]
 pub trait StateRef {
     type Error;
 

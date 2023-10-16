@@ -13,6 +13,7 @@ use crate::primitives::{
 use crate::{db::Database, journaled_state::JournaledState, precompile, Inspector};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use auto_impl::auto_impl;
 use core::marker::PhantomData;
 use revm_interpreter::gas::initial_tx_gas;
 use revm_interpreter::MAX_CODE_SIZE;
@@ -65,6 +66,8 @@ struct CallResult {
     return_value: Bytes,
 }
 
+/// EVM transaction interface.
+#[auto_impl(&mut, Box)]
 pub trait Transact<DBError> {
     /// Run checks that could make transaction fail before call/create.
     fn preverify_transaction(&mut self) -> Result<(), EVMError<DBError>>;
@@ -76,7 +79,7 @@ pub trait Transact<DBError> {
     #[inline]
     fn transact(&mut self) -> EVMResult<DBError> {
         self.preverify_transaction()
-            .and_then(|_| self.transact_preverified())
+            .and_then(|()| self.transact_preverified())
     }
 }
 

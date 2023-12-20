@@ -2,7 +2,7 @@ use core::ops::Range;
 
 use crate::{
     interpreter::{CallInputs, CreateInputs, Interpreter},
-    primitives::{db::Database, Address, Bytes, B256, U256},
+    primitives::{Address, Bytes, B256, U256},
     EvmContext,
 };
 use auto_impl::auto_impl;
@@ -29,13 +29,17 @@ pub mod inspectors {
 
 /// EVM [Interpreter] callbacks.
 #[auto_impl(&mut, Box)]
-pub trait Inspector<DB: Database> {
+pub trait Inspector<DatabaseError> {
     /// Called before the interpreter is initialized.
     ///
     /// If `interp.instruction_result` is set to anything other than [crate::interpreter::InstructionResult::Continue] then the execution of the interpreter
     /// is skipped.
     #[inline]
-    fn initialize_interp(&mut self, interp: &mut Interpreter, context: &mut EvmContext<'_, DB>) {
+    fn initialize_interp(
+        &mut self,
+        interp: &mut Interpreter,
+        context: &mut EvmContext<'_, DatabaseError>,
+    ) {
         let _ = interp;
         let _ = context;
     }
@@ -49,7 +53,7 @@ pub trait Inspector<DB: Database> {
     ///
     /// To get the current opcode, use `interp.current_opcode()`.
     #[inline]
-    fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<'_, DB>) {
+    fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<'_, DatabaseError>) {
         let _ = interp;
         let _ = context;
     }
@@ -58,7 +62,7 @@ pub trait Inspector<DB: Database> {
     #[inline]
     fn log(
         &mut self,
-        context: &mut EvmContext<'_, DB>,
+        context: &mut EvmContext<'_, DatabaseError>,
         address: &Address,
         topics: &[B256],
         data: &Bytes,
@@ -74,7 +78,7 @@ pub trait Inspector<DB: Database> {
     /// Setting `interp.instruction_result` to anything other than [crate::interpreter::InstructionResult::Continue] alters the execution
     /// of the interpreter.
     #[inline]
-    fn step_end(&mut self, interp: &mut Interpreter, context: &mut EvmContext<'_, DB>) {
+    fn step_end(&mut self, interp: &mut Interpreter, context: &mut EvmContext<'_, DatabaseError>) {
         let _ = interp;
         let _ = context;
     }
@@ -85,7 +89,7 @@ pub trait Inspector<DB: Database> {
     #[inline]
     fn call(
         &mut self,
-        context: &mut EvmContext<'_, DB>,
+        context: &mut EvmContext<'_, DatabaseError>,
         inputs: &mut CallInputs,
     ) -> Option<(InterpreterResult, Range<usize>)> {
         let _ = context;
@@ -100,7 +104,7 @@ pub trait Inspector<DB: Database> {
     #[inline]
     fn call_end(
         &mut self,
-        context: &mut EvmContext<'_, DB>,
+        context: &mut EvmContext<'_, DatabaseError>,
         result: InterpreterResult,
     ) -> InterpreterResult {
         let _ = context;
@@ -113,7 +117,7 @@ pub trait Inspector<DB: Database> {
     #[inline]
     fn create(
         &mut self,
-        context: &mut EvmContext<'_, DB>,
+        context: &mut EvmContext<'_, DatabaseError>,
         inputs: &mut CreateInputs,
     ) -> Option<(InterpreterResult, Option<Address>)> {
         let _ = context;
@@ -128,7 +132,7 @@ pub trait Inspector<DB: Database> {
     #[inline]
     fn create_end(
         &mut self,
-        context: &mut EvmContext<'_, DB>,
+        context: &mut EvmContext<'_, DatabaseError>,
         result: InterpreterResult,
         address: Option<Address>,
     ) -> (InterpreterResult, Option<Address>) {

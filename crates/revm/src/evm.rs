@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use crate::{
     db::{Database, DatabaseCommit, DatabaseRef},
     evm_impl::{new_evm, Transact},
@@ -49,7 +51,7 @@ impl<DB> Default for EVM<DB> {
     }
 }
 
-impl<DB: Database + DatabaseCommit> EVM<DB> {
+impl<DB: Database + DatabaseCommit + Debug> EVM<DB> {
     /// Execute transaction and apply result to database
     pub fn transact_commit(&mut self) -> Result<ExecutionResult, EVMError<DB::Error>> {
         let ResultAndState { result, state } = self.transact()?;
@@ -58,7 +60,7 @@ impl<DB: Database + DatabaseCommit> EVM<DB> {
     }
 
     /// Inspect transaction and commit changes to database.
-    pub fn inspect_commit<INSP: Inspector<DB>>(
+    pub fn inspect_commit<INSP: Inspector<DB::Error>>(
         &mut self,
         inspector: INSP,
     ) -> Result<ExecutionResult, EVMError<DB::Error>> {
@@ -68,7 +70,7 @@ impl<DB: Database + DatabaseCommit> EVM<DB> {
     }
 }
 
-impl<DB: Database> EVM<DB> {
+impl<DB: Database + Debug> EVM<DB> {
     /// Do checks that could make transaction fail before call/create
     pub fn preverify_transaction(&mut self) -> Result<(), EVMError<DB::Error>> {
         if let Some(db) = self.db.as_mut() {
@@ -98,7 +100,10 @@ impl<DB: Database> EVM<DB> {
     }
 
     /// Execute transaction with given inspector, without wring to DB. Return change state.
-    pub fn inspect<INSP: Inspector<DB>>(&mut self, mut inspector: INSP) -> EVMResult<DB::Error> {
+    pub fn inspect<INSP: Inspector<DB::Error>>(
+        &mut self,
+        mut inspector: INSP,
+    ) -> EVMResult<DB::Error> {
         if let Some(db) = self.db.as_mut() {
             new_evm::<DB>(&mut self.env, db, Some(&mut inspector)).transact()
         } else {
@@ -107,7 +112,7 @@ impl<DB: Database> EVM<DB> {
     }
 }
 
-impl<'a, DB: DatabaseRef> EVM<DB> {
+impl<'a, DB: DatabaseRef + Debug> EVM<DB> {
     /// Do checks that could make transaction fail before call/create
     pub fn preverify_transaction_ref(&self) -> Result<(), EVMError<DB::Error>> {
         if let Some(db) = self.db.as_ref() {
@@ -139,7 +144,7 @@ impl<'a, DB: DatabaseRef> EVM<DB> {
     }
 
     /// Execute transaction with given inspector, without wring to DB. Return change state.
-    pub fn inspect_ref<I: Inspector<WrapDatabaseRef<&'a DB>>>(
+    pub fn inspect_ref<I: Inspector<DB::Error>>(
         &'a self,
         mut inspector: I,
     ) -> EVMResult<DB::Error> {

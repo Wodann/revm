@@ -13,20 +13,25 @@ use crate::{
     CallStackFrame, CALL_STACK_LIMIT,
 };
 use alloc::boxed::Box;
-use core::ops::Range;
+use core::{fmt::Debug, ops::Range};
+
+/// A trait for databases that can be debugged.
+pub trait DebuggableDatabase: Database + Debug {}
+
+impl<T: Database + Debug> DebuggableDatabase for T {}
 
 /// EVM Data contains all the data that EVM needs to execute.
 #[derive(Debug)]
-pub struct EvmContext<'a, DB: Database> {
+pub struct EvmContext<'a, DatabaseError> {
     /// EVM Environment contains all the information about config, block and transaction that
     /// evm needs.
     pub env: &'a mut Env,
     /// EVM State with journaling support.
     pub journaled_state: JournaledState,
     /// Database to load data from.
-    pub db: &'a mut DB,
+    pub db: &'a mut dyn DebuggableDatabase<Error = DatabaseError>,
     /// Error that happened during execution.
-    pub error: Option<DB::Error>,
+    pub error: Option<DatabaseError>,
     /// Precompiles that are available for evm.
     pub precompiles: Precompiles,
     /// Used as temporary value holder to store L1 block info.
@@ -34,12 +39,12 @@ pub struct EvmContext<'a, DB: Database> {
     pub l1_block_info: Option<crate::optimism::L1BlockInfo>,
 }
 
-impl<'a, DB: Database> EvmContext<'a, DB> {
+impl<'a, DatabaseError> EvmContext<'a, DatabaseError> {
     /// Load access list for berlin hard fork.
     ///
     /// Loading of accounts/storages is needed to make them warm.
     #[inline]
-    pub fn load_access_list(&mut self) -> Result<(), EVMError<DB::Error>> {
+    pub fn load_access_list(&mut self) -> Result<(), EVMError<DatabaseError>> {
         for (address, slots) in self.env.tx.access_list.iter() {
             self.journaled_state
                 .initial_account_load(*address, slots, self.db)
@@ -434,6 +439,8 @@ impl<'a, DB: Database> EvmContext<'a, DB> {
 /// Test utilities for the [`EvmContext`].
 #[cfg(any(test, feature = "test-utils"))]
 pub(crate) mod test_utils {
+    use core::convert::Infallible;
+
     use super::*;
     use crate::db::CacheDB;
     use crate::db::EmptyDB;
@@ -472,7 +479,7 @@ pub(crate) mod test_utils {
         env: &'a mut Env,
         db: &'a mut CacheDB<EmptyDB>,
         balance: U256,
-    ) -> EvmContext<'a, CacheDB<EmptyDB>> {
+    ) -> EvmContext<'a, Infallible> {
         db.insert_account_info(
             test_utils::MOCK_CALLER,
             crate::primitives::AccountInfo {
@@ -489,7 +496,7 @@ pub(crate) mod test_utils {
     pub fn create_cache_db_evm_context<'a>(
         env: &'a mut Env,
         db: &'a mut CacheDB<EmptyDB>,
-    ) -> EvmContext<'a, CacheDB<EmptyDB>> {
+    ) -> EvmContext<'a, Infallible> {
         EvmContext {
             env,
             journaled_state: JournaledState::new(SpecId::CANCUN, vec![]),
@@ -505,7 +512,7 @@ pub(crate) mod test_utils {
     pub fn create_empty_evm_context<'a>(
         env: &'a mut Env,
         db: &'a mut EmptyDB,
-    ) -> EvmContext<'a, EmptyDB> {
+    ) -> EvmContext<'a, Infallible> {
         EvmContext {
             env,
             journaled_state: JournaledState::new(SpecId::CANCUN, vec![]),

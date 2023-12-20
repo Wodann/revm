@@ -1,5 +1,6 @@
 use crate::{
     db::Database,
+    evm_context::DebuggableDatabase,
     handler::Handler,
     inspector_instruction,
     interpreter::{
@@ -26,11 +27,11 @@ use crate::optimism;
 /// EVM call stack limit.
 pub const CALL_STACK_LIMIT: u64 = 1024;
 
-pub struct EVMImpl<'a, SPEC: Spec, DB: Database> {
-    pub context: EvmContext<'a, DB>,
-    pub inspector: Option<&'a mut dyn Inspector<DB>>,
+pub struct EVMImpl<'a, SPEC: Spec, DatabaseError> {
+    pub context: EvmContext<'a, DatabaseError>,
+    pub inspector: Option<&'a mut dyn Inspector<DatabaseError>>,
     pub instruction_table: InstructionTables<'a, Self>,
-    pub handler: Handler<DB>,
+    pub handler: Handler<DatabaseError>,
     _phantomdata: PhantomData<SPEC>,
 }
 
@@ -99,13 +100,13 @@ impl<'a, SPEC: Spec, DB: Database> EVMImpl<'a, SPEC, DB> {
     }
 }
 
-impl<'a, SPEC: Spec + 'static, DB: Database> EVMImpl<'a, SPEC, DB> {
-    pub fn new_with_spec(
+impl<'a, SPEC: Spec + 'static, DatabaseError> EVMImpl<'a, SPEC, DatabaseError> {
+    pub fn new_with_spec<DB: DebuggableDatabase<Error = DatabaseError>>(
         db: &'a mut DB,
         env: &'a mut Env,
-        inspector: Option<&'a mut dyn Inspector<DB>>,
+        inspector: Option<&'a mut dyn Inspector<DatabaseError>>,
         precompiles: Precompiles,
-    ) -> Self {
+    ) -> Self where {
         let journaled_state =
             JournaledState::new(SPEC::SPEC_ID, precompiles.addresses().copied().collect());
         // If T is present it should be a generic T that modifies handler.
@@ -348,7 +349,7 @@ impl<'a, SPEC: Spec + 'static, DB: Database> EVMImpl<'a, SPEC, DB> {
     }
 
     /// Pre verify transaction.
-    pub fn preverify_transaction_inner(&mut self) -> Result<(), EVMError<DB::Error>> {
+    pub fn preverify_transaction_inner(&mut self) -> Result<(), EVMError<DatabaseError>> {
         let env = self.env();
 
         // Important: validate block before tx.
@@ -381,7 +382,7 @@ impl<'a, SPEC: Spec + 'static, DB: Database> EVMImpl<'a, SPEC, DB> {
     }
 
     /// Transact preverified transaction.
-    pub fn transact_preverified_inner(&mut self) -> EVMResult<DB::Error> {
+    pub fn transact_preverified_inner(&mut self) -> EVMResult<DatabaseError> {
         let env = &self.context.env;
         let tx_caller = env.tx.caller;
         let tx_value = env.tx.value;
@@ -560,20 +561,22 @@ pub trait Transact<DBError> {
     fn transact(&mut self) -> EVMResult<DBError>;
 }
 
-impl<'a, SPEC: Spec + 'static, DB: Database> Transact<DB::Error> for EVMImpl<'a, SPEC, DB> {
+impl<'a, SPEC: Spec + 'static, DatabaseError> Transact<DatabaseError>
+    for EVMImpl<'a, SPEC, DatabaseError>
+{
     #[inline]
-    fn preverify_transaction(&mut self) -> Result<(), EVMError<DB::Error>> {
+    fn preverify_transaction(&mut self) -> Result<(), EVMError<DatabaseError>> {
         self.preverify_transaction_inner()
     }
 
     #[inline]
-    fn transact_preverified(&mut self) -> EVMResult<DB::Error> {
+    fn transact_preverified(&mut self) -> EVMResult<DatabaseError> {
         let output = self.transact_preverified_inner();
         self.handler.end(&mut self.context, output)
     }
 
     #[inline]
-    fn transact(&mut self) -> EVMResult<DB::Error> {
+    fn transact(&mut self) -> EVMResult<DatabaseError> {
         let output = self
             .preverify_transaction_inner()
             .and_then(|()| self.transact_preverified_inner());
@@ -581,7 +584,7 @@ impl<'a, SPEC: Spec + 'static, DB: Database> Transact<DB::Error> for EVMImpl<'a,
     }
 }
 
-impl<'a, SPEC: Spec + 'static, DB: Database> Host for EVMImpl<'a, SPEC, DB> {
+impl<'a, SPEC: Spec + 'static, DatabaseError> Host for EVMImpl<'a, SPEC, DatabaseError> {
     fn env(&mut self) -> &mut Env {
         self.context.env()
     }
@@ -654,14 +657,14 @@ impl<'a, SPEC: Spec + 'static, DB: Database> Host for EVMImpl<'a, SPEC, DB> {
 }
 
 /// Creates new EVM instance with erased types.
-pub fn new_evm<'a, DB: Database>(
+pub fn new_evm<'a, DB: DebuggableDatabase>(
     env: &'a mut Env,
     db: &'a mut DB,
-    insp: Option<&'a mut dyn Inspector<DB>>,
+    insp: Option<&'a mut dyn Inspector<DB::Error>>,
 ) -> Box<dyn Transact<DB::Error> + 'a> {
     macro_rules! create_evm {
         ($spec:ident) => {
-            Box::new(EVMImpl::<'a, $spec, DB>::new_with_spec(
+            Box::new(EVMImpl::<'a, $spec, DB::Error>::new_with_spec(
                 db,
                 env,
                 insp,

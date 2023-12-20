@@ -92,7 +92,7 @@ pub fn calculate_gas_refund<SPEC: Spec>(env: &Env, gas: &Gas) -> u64 {
 /// Reward beneficiary with gas fee.
 #[inline]
 pub fn reward_beneficiary<SPEC: Spec, DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+    context: &mut EvmContext<'_, DatabaseError>,
     gas: &Gas,
 ) -> Result<(), EVMError<DB::Error>> {
     let is_deposit = context.env.cfg.optimism && context.env.tx.optimism.source_hash.is_some();
@@ -146,7 +146,7 @@ pub fn reward_beneficiary<SPEC: Spec, DB: Database>(
 /// Main return handle, returns the output of the transaction.
 #[inline]
 pub fn main_return<SPEC: Spec, DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+    context: &mut EvmContext<'_, DatabaseError>,
     call_result: InstructionResult,
     output: Output,
     gas: &Gas,
@@ -171,7 +171,7 @@ pub fn main_return<SPEC: Spec, DB: Database>(
 /// Deposit transaction can't be reverted and is always successful.
 #[inline]
 pub fn end_handle<SPEC: Spec, DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+    context: &mut EvmContext<'_, DatabaseError>,
     evm_output: Result<ResultAndState, EVMError<DB::Error>>,
 ) -> Result<ResultAndState, EVMError<DB::Error>> {
     evm_output.or_else(|err| {

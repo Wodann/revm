@@ -3,8 +3,7 @@
 use crate::{
     interpreter::{return_ok, return_revert, Gas, InstructionResult, SuccessOrHalt},
     primitives::{
-        db::Database, EVMError, Env, ExecutionResult, Output, ResultAndState, Spec, SpecId::LONDON,
-        U256,
+        EVMError, Env, ExecutionResult, Output, ResultAndState, Spec, SpecId::LONDON, U256,
     },
     EvmContext,
 };
@@ -35,10 +34,10 @@ pub fn handle_call_return<SPEC: Spec>(
 }
 
 #[inline]
-pub fn handle_reimburse_caller<SPEC: Spec, DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+pub fn handle_reimburse_caller<SPEC: Spec, DatabaseError>(
+    context: &mut EvmContext<'_, DatabaseError>,
     gas: &Gas,
-) -> Result<(), EVMError<DB::Error>> {
+) -> Result<(), EVMError<DatabaseError>> {
     let caller = context.env.tx.caller;
     let effective_gas_price = context.env.effective_gas_price();
 
@@ -58,10 +57,10 @@ pub fn handle_reimburse_caller<SPEC: Spec, DB: Database>(
 
 /// Reward beneficiary with gas fee.
 #[inline]
-pub fn reward_beneficiary<SPEC: Spec, DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+pub fn reward_beneficiary<SPEC: Spec, DatabaseError>(
+    context: &mut EvmContext<'_, DatabaseError>,
     gas: &Gas,
-) -> Result<(), EVMError<DB::Error>> {
+) -> Result<(), EVMError<DatabaseError>> {
     let beneficiary = context.env.block.coinbase;
     let effective_gas_price = context.env.effective_gas_price();
 
@@ -108,12 +107,12 @@ pub fn calculate_gas_refund<SPEC: Spec>(env: &Env, gas: &Gas) -> u64 {
 
 /// Main return handle, returns the output of the transaction.
 #[inline]
-pub fn main_return<DB: Database>(
-    context: &mut EvmContext<'_, DB>,
+pub fn main_return<DatabaseError>(
+    context: &mut EvmContext<'_, DatabaseError>,
     call_result: InstructionResult,
     output: Output,
     gas: &Gas,
-) -> Result<ResultAndState, EVMError<DB::Error>> {
+) -> Result<ResultAndState, EVMError<DatabaseError>> {
     // used gas with refund calculated.
     let gas_refunded = gas.refunded() as u64;
     let final_gas_used = gas.spend() - gas_refunded;
@@ -154,10 +153,10 @@ pub fn main_return<DB: Database>(
 
 /// Mainnet end handle does not change the output.
 #[inline]
-pub fn end_handle<DB: Database>(
-    _context: &mut EvmContext<'_, DB>,
-    evm_output: Result<ResultAndState, EVMError<DB::Error>>,
-) -> Result<ResultAndState, EVMError<DB::Error>> {
+pub fn end_handle<DatabaseError>(
+    _context: &mut EvmContext<'_, DatabaseError>,
+    evm_output: Result<ResultAndState, EVMError<DatabaseError>>,
+) -> Result<ResultAndState, EVMError<DatabaseError>> {
     evm_output
 }
 

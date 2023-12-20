@@ -2,16 +2,16 @@ use crate::EVMImpl;
 use alloc::boxed::Box;
 use revm_interpreter::{
     opcode::{BoxedInstruction, Instruction},
-    primitives::{db::Database, Spec},
+    primitives::Spec,
     InstructionResult, Interpreter,
 };
 
 /// Outer closure that calls Inspector for every instruction.
-pub fn inspector_instruction<'a, SPEC: Spec + 'static, DB: Database>(
-    instruction: Instruction<EVMImpl<'a, SPEC, DB>>,
-) -> BoxedInstruction<'a, EVMImpl<'a, SPEC, DB>> {
+pub fn inspector_instruction<'a, SPEC: Spec + 'static, DatabaseError>(
+    instruction: Instruction<EVMImpl<'a, SPEC, DatabaseError>>,
+) -> BoxedInstruction<'a, EVMImpl<'a, SPEC, DatabaseError>> {
     Box::new(
-        move |interpreter: &mut Interpreter, host: &mut EVMImpl<'a, SPEC, DB>| {
+        move |interpreter: &mut Interpreter, host: &mut EVMImpl<'a, SPEC, DatabaseError>| {
             if let Some(inspector) = host.inspector.as_mut() {
                 // SAFETY: as the PC was already incremented we need to subtract 1 to preserve the
                 // old Inspector behavior.

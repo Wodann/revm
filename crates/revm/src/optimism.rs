@@ -41,7 +41,7 @@ pub struct L1BlockInfo {
 }
 
 impl L1BlockInfo {
-    pub fn try_fetch<DB: Database>(
+    pub fn try_fetch<DB: Database + ?Sized>(
         db: &mut DB,
         is_optimism: bool,
     ) -> Result<Option<L1BlockInfo>, DB::Error> {

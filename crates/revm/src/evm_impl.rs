@@ -21,21 +21,21 @@ use revm_precompile::{Precompile, Precompiles};
 #[cfg(feature = "optimism")]
 use crate::optimism;
 
-pub struct EVMData<'a, DB: Database> {
+pub struct EVMData<'a, DatabaseErrorT> {
     pub env: &'a mut Env,
     pub journaled_state: JournaledState,
-    pub db: &'a mut DB,
-    pub error: Option<DB::Error>,
+    pub db: &'a mut dyn Database<Error = DatabaseErrorT>,
+    pub error: Option<DatabaseErrorT>,
     pub precompiles: Precompiles,
     /// Used as temporary value holder to store L1 block info.
     #[cfg(feature = "optimism")]
     pub l1_block_info: Option<optimism::L1BlockInfo>,
 }
 
-pub struct EVMImpl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> {
-    data: EVMData<'a, DB>,
-    inspector: &'a mut dyn Inspector<DB>,
-    handler: Handler<DB>,
+pub struct EVMImpl<'a, GSPEC: Spec, DatabaseErrorT, const INSPECT: bool> {
+    data: EVMData<'a, DatabaseErrorT>,
+    inspector: &'a mut dyn Inspector<DatabaseErrorT>,
+    handler: Handler<DatabaseErrorT>,
     _phantomdata: PhantomData<GSPEC>,
 }
 
@@ -80,12 +80,12 @@ pub trait Transact<DBError> {
     }
 }
 
-impl<'a, DB: Database> EVMData<'a, DB> {
+impl<'a, DatabaseErrorT> EVMData<'a, DatabaseErrorT> {
     /// Load access list for berlin hardfork.
     ///
     /// Loading of accounts/storages is needed to make them warm.
     #[inline]
-    fn load_access_list(&mut self) -> Result<(), EVMError<DB::Error>> {
+    fn load_access_list(&mut self) -> Result<(), EVMError<DatabaseErrorT>> {
         for (address, slots) in self.env.tx.access_list.iter() {
             self.journaled_state
                 .initial_account_load(*address, slots, self.db)
@@ -96,16 +96,18 @@ impl<'a, DB: Database> EVMData<'a, DB> {
 }
 
 #[cfg(feature = "optimism")]
-impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, INSPECT> {
+impl<'a, GSPEC: Spec, DatabaseErrorT, const INSPECT: bool>
+    EVMImpl<'a, GSPEC, DatabaseErrorT, INSPECT>
+{
     /// If the transaction is not a deposit transaction, subtract the L1 data fee from the
     /// caller's balance directly after minting the requested amount of ETH.
-    fn remove_l1_cost(
+    fn remove_l1_cost<DB: Database<Error = DatabaseErrorT> + ?Sized>(
         is_deposit: bool,
         tx_caller: Address,
         l1_cost: U256,
         db: &mut DB,
         journal: &mut JournaledState,
-    ) -> Result<(), EVMError<DB::Error>> {
+    ) -> Result<(), EVMError<DatabaseErrorT>> {
         if is_deposit {
             return Ok(());
         }
@@ -133,12 +135,12 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
     /// If the transaction is a deposit with a `mint` value, add the mint value
     /// in wei to the caller's balance. This should be persisted to the database
     /// prior to the rest of execution.
-    fn commit_mint_value(
+    fn commit_mint_value<DB: Database<Error = DatabaseErrorT> + ?Sized>(
         tx_caller: Address,
         tx_mint: Option<u128>,
         db: &mut DB,
         journal: &mut JournaledState,
-    ) -> Result<(), EVMError<DB::Error>> {
+    ) -> Result<(), EVMError<DatabaseErrorT>> {
         if let Some(mint) = tx_mint {
             journal
                 .load_account(tx_caller, db)
@@ -152,10 +154,10 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
     }
 }
 
-impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
-    for EVMImpl<'a, GSPEC, DB, INSPECT>
+impl<'a, GSPEC: Spec, DatabaseErrorT, const INSPECT: bool> Transact<DatabaseErrorT>
+    for EVMImpl<'a, GSPEC, DatabaseErrorT, INSPECT>
 {
-    fn preverify_transaction(&mut self) -> Result<(), EVMError<DB::Error>> {
+    fn preverify_transaction(&mut self) -> Result<(), EVMError<DatabaseErrorT>> {
         let env = self.env();
 
         // Important: validate block before tx.
@@ -187,7 +189,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
             .map_err(Into::into)
     }
 
-    fn transact_preverified(&mut self) -> EVMResult<DB::Error> {
+    fn transact_preverified(&mut self) -> EVMResult<DatabaseErrorT> {
         let env = &self.data.env;
         let tx_caller = env.tx.caller;
         let tx_value = env.tx.value;
@@ -246,7 +248,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
 
         #[cfg(feature = "optimism")]
         if self.data.env.cfg.optimism {
-            EVMImpl::<GSPEC, DB, INSPECT>::commit_mint_value(
+            EVMImpl::<GSPEC, DatabaseErrorT, INSPECT>::commit_mint_value(
                 tx_caller,
                 self.data.env.tx.optimism.mint,
                 self.data.db,
@@ -254,7 +256,7 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
             )?;
 
             let is_deposit = self.data.env.tx.optimism.source_hash.is_some();
-            EVMImpl::<GSPEC, DB, INSPECT>::remove_l1_cost(
+            EVMImpl::<GSPEC, DatabaseErrorT, INSPECT>::remove_l1_cost(
                 is_deposit,
                 tx_caller,
                 tx_l1_cost,
@@ -394,11 +396,13 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> Transact<DB::Error>
     }
 }
 
-impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, INSPECT> {
-    pub fn new(
+impl<'a, GSPEC: Spec, DatabaseErrorT, const INSPECT: bool>
+    EVMImpl<'a, GSPEC, DatabaseErrorT, INSPECT>
+{
+    pub fn new<DB: Database<Error = DatabaseErrorT>>(
         db: &'a mut DB,
         env: &'a mut Env,
-        inspector: &'a mut dyn Inspector<DB>,
+        inspector: &'a mut dyn Inspector<DatabaseErrorT>,
         precompiles: Precompiles,
     ) -> Self {
         let journaled_state = JournaledState::new(precompiles.len(), GSPEC::SPEC_ID);
@@ -819,8 +823,8 @@ impl<'a, GSPEC: Spec, DB: Database, const INSPECT: bool> EVMImpl<'a, GSPEC, DB, 
     }
 }
 
-impl<'a, GSPEC: Spec, DB: Database + 'a, const INSPECT: bool> Host
-    for EVMImpl<'a, GSPEC, DB, INSPECT>
+impl<'a, GSPEC: Spec, DatabaseErrorT, const INSPECT: bool> Host
+    for EVMImpl<'a, GSPEC, DatabaseErrorT, INSPECT>
 {
     fn step(&mut self, interp: &mut Interpreter) -> InstructionResult {
         self.inspector.step(interp, &mut self.data)
@@ -1000,6 +1004,8 @@ impl<'a, GSPEC: Spec, DB: Database + 'a, const INSPECT: bool> Host
 #[cfg(feature = "optimism")]
 #[cfg(test)]
 mod tests {
+    use core::convert::Infallible;
+
     use super::*;
 
     use crate::db::InMemoryDB;
@@ -1024,7 +1030,7 @@ mod tests {
             .initial_account_load(caller, &[U256::from(100)], &mut db)
             .unwrap();
         assert!(
-            EVMImpl::<BedrockSpec, InMemoryDB, false>::commit_mint_value(
+            EVMImpl::<BedrockSpec, Infallible, false>::commit_mint_value(
                 caller,
                 mint_value,
                 &mut db,
@@ -1039,7 +1045,7 @@ mod tests {
 
         // No mint value should be a no-op.
         assert!(
-            EVMImpl::<BedrockSpec, InMemoryDB, false>::commit_mint_value(
+            EVMImpl::<BedrockSpec, Infallible, false>::commit_mint_value(
                 caller,
                 None,
                 &mut db,
@@ -1060,7 +1066,7 @@ mod tests {
         journal
             .initial_account_load(caller, slots, &mut db)
             .unwrap();
-        assert!(EVMImpl::<BedrockSpec, InMemoryDB, false>::remove_l1_cost(
+        assert!(EVMImpl::<BedrockSpec, Infallible, false>::remove_l1_cost(
             true,
             caller,
             U256::ZERO,
@@ -1087,7 +1093,7 @@ mod tests {
         journal
             .initial_account_load(caller, &[U256::from(100)], &mut db)
             .unwrap();
-        assert!(EVMImpl::<BedrockSpec, InMemoryDB, false>::remove_l1_cost(
+        assert!(EVMImpl::<BedrockSpec, Infallible, false>::remove_l1_cost(
             false,
             caller,
             U256::from(1),
@@ -1119,7 +1125,7 @@ mod tests {
             .initial_account_load(caller, &[U256::from(100)], &mut db)
             .unwrap();
         assert_eq!(
-            EVMImpl::<BedrockSpec, InMemoryDB, false>::remove_l1_cost(
+            EVMImpl::<BedrockSpec, Infallible, false>::remove_l1_cost(
                 false,
                 caller,
                 U256::from(101),

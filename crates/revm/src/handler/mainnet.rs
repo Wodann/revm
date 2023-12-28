@@ -3,7 +3,7 @@ use revm_interpreter::primitives::EVMError;
 
 use crate::{
     interpreter::{return_ok, return_revert, Gas, InstructionResult},
-    primitives::{db::Database, Env, Spec, SpecId::LONDON, U256},
+    primitives::{Env, Spec, SpecId::LONDON, U256},
     EVMData,
 };
 
@@ -32,11 +32,11 @@ pub fn handle_call_return<SPEC: Spec>(
 }
 
 #[inline]
-pub fn handle_reimburse_caller<SPEC: Spec, DB: Database>(
-    data: &mut EVMData<'_, DB>,
+pub fn handle_reimburse_caller<SPEC: Spec, DatabaseErrorT>(
+    data: &mut EVMData<'_, DatabaseErrorT>,
     gas: &Gas,
     gas_refund: u64,
-) -> Result<(), EVMError<DB::Error>> {
+) -> Result<(), EVMError<DatabaseErrorT>> {
     let _ = data;
     let caller = data.env.tx.caller;
     let effective_gas_price = data.env.effective_gas_price();
@@ -57,11 +57,11 @@ pub fn handle_reimburse_caller<SPEC: Spec, DB: Database>(
 
 /// Reward beneficiary with gas fee.
 #[inline]
-pub fn reward_beneficiary<SPEC: Spec, DB: Database>(
-    data: &mut EVMData<'_, DB>,
+pub fn reward_beneficiary<SPEC: Spec, DatabaseErrorT>(
+    data: &mut EVMData<'_, DatabaseErrorT>,
     gas: &Gas,
     gas_refund: u64,
-) -> Result<(), EVMError<DB::Error>> {
+) -> Result<(), EVMError<DatabaseErrorT>> {
     let beneficiary = data.env.block.coinbase;
     let effective_gas_price = data.env.effective_gas_price();
 

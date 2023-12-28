@@ -6,7 +6,7 @@ use super::mainnet;
 use crate::{
     interpreter::{return_ok, return_revert, Gas, InstructionResult},
     optimism,
-    primitives::{db::Database, EVMError, Env, Spec, SpecId::REGOLITH, U256},
+    primitives::{EVMError, Env, Spec, SpecId::REGOLITH, U256},
     EVMData,
 };
 
@@ -88,17 +88,17 @@ pub fn calculate_gas_refund<SPEC: Spec>(env: &Env, gas: &Gas) -> u64 {
 
 /// Reward beneficiary with gas fee.
 #[inline]
-pub fn reward_beneficiary<SPEC: Spec, DB: Database>(
-    data: &mut EVMData<'_, DB>,
+pub fn reward_beneficiary<SPEC: Spec, DatabaseErrorT>(
+    data: &mut EVMData<'_, DatabaseErrorT>,
     gas: &Gas,
     gas_refund: u64,
-) -> Result<(), EVMError<DB::Error>> {
+) -> Result<(), EVMError<DatabaseErrorT>> {
     let is_deposit = data.env.cfg.optimism && data.env.tx.optimism.source_hash.is_some();
     let disable_coinbase_tip = data.env.cfg.optimism && is_deposit;
 
     // transfer fee to coinbase/beneficiary.
     if !disable_coinbase_tip {
-        mainnet::reward_beneficiary::<SPEC, DB>(data, gas, gas_refund)?;
+        mainnet::reward_beneficiary::<SPEC, DatabaseErrorT>(data, gas, gas_refund)?;
     }
 
     if data.env.cfg.optimism && !is_deposit {

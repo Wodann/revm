@@ -1,6 +1,6 @@
 use crate::evm_impl::EVMData;
 use crate::interpreter::{CallInputs, CreateInputs, Gas, InstructionResult, Interpreter};
-use crate::primitives::{db::Database, Address, Bytes, B256, U256};
+use crate::primitives::{Address, Bytes, B256, U256};
 
 use auto_impl::auto_impl;
 
@@ -26,7 +26,7 @@ pub mod inspectors {
 }
 
 #[auto_impl(&mut, Box)]
-pub trait Inspector<DB: Database> {
+pub trait Inspector<DatabaseError> {
     /// Called Before the interpreter is initialized.
     ///
     /// If anything other than [InstructionResult::Continue] is returned then execution of the interpreter is
@@ -34,7 +34,7 @@ pub trait Inspector<DB: Database> {
     fn initialize_interp(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
     ) -> InstructionResult {
         InstructionResult::Continue
     }
@@ -50,7 +50,7 @@ pub trait Inspector<DB: Database> {
     fn step(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
     ) -> InstructionResult {
         InstructionResult::Continue
     }
@@ -58,7 +58,7 @@ pub trait Inspector<DB: Database> {
     /// Called when a log is emitted.
     fn log(
         &mut self,
-        _evm_data: &mut EVMData<'_, DB>,
+        _evm_data: &mut EVMData<'_, DatabaseError>,
         _address: &Address,
         _topics: &[B256],
         _data: &Bytes,
@@ -71,7 +71,7 @@ pub trait Inspector<DB: Database> {
     fn step_end(
         &mut self,
         _interp: &mut Interpreter,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
         _eval: InstructionResult,
     ) -> InstructionResult {
         InstructionResult::Continue
@@ -82,7 +82,7 @@ pub trait Inspector<DB: Database> {
     /// InstructionResulting anything other than [InstructionResult::Continue] overrides the result of the call.
     fn call(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
         _inputs: &mut CallInputs,
     ) -> (InstructionResult, Gas, Bytes) {
         (InstructionResult::Continue, Gas::new(0), Bytes::new())
@@ -94,7 +94,7 @@ pub trait Inspector<DB: Database> {
     /// out)`) will alter the result of the call.
     fn call_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
         _inputs: &CallInputs,
         remaining_gas: Gas,
         ret: InstructionResult,
@@ -108,7 +108,7 @@ pub trait Inspector<DB: Database> {
     /// InstructionResulting anything other than [InstructionResult::Continue] overrides the result of the creation.
     fn create(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
         _inputs: &mut CreateInputs,
     ) -> (InstructionResult, Option<Address>, Gas, Bytes) {
         (
@@ -125,7 +125,7 @@ pub trait Inspector<DB: Database> {
     /// address, out)`) will alter the result of the create.
     fn create_end(
         &mut self,
-        _data: &mut EVMData<'_, DB>,
+        _data: &mut EVMData<'_, DatabaseError>,
         _inputs: &CreateInputs,
         ret: InstructionResult,
         address: Option<Address>,

@@ -189,7 +189,7 @@ impl JournaledState {
         Some(account.info.nonce)
     }
 
-    pub fn transfer<DB: Database>(
+    pub fn transfer<DB: Database + ?Sized>(
         &mut self,
         from: &Address,
         to: &Address,
@@ -474,7 +474,7 @@ impl JournaledState {
     ///  * https://github.com/ethereum/go-ethereum/blob/141cd425310b503c5678e674a8c3872cf46b7086/core/vm/instructions.go#L832-L833
     ///  * https://github.com/ethereum/go-ethereum/blob/141cd425310b503c5678e674a8c3872cf46b7086/core/state/statedb.go#L449
     ///  * https://eips.ethereum.org/EIPS/eip-6780
-    pub fn selfdestruct<DB: Database>(
+    pub fn selfdestruct<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         target: Address,
@@ -553,7 +553,7 @@ impl JournaledState {
     }
 
     /// Initial load of account. This load will not be tracked inside journal
-    pub fn initial_account_load<DB: Database>(
+    pub fn initial_account_load<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         slots: &[U256],
@@ -579,7 +579,7 @@ impl JournaledState {
     }
 
     /// load account into memory. return if it is cold or warm accessed
-    pub fn load_account<DB: Database>(
+    pub fn load_account<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         db: &mut DB,
@@ -608,7 +608,7 @@ impl JournaledState {
     }
 
     // first is is_cold second bool is exists.
-    pub fn load_account_exist<DB: Database>(
+    pub fn load_account_exist<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         db: &mut DB,
@@ -626,7 +626,7 @@ impl JournaledState {
         Ok((is_cold, exist))
     }
 
-    pub fn load_code<DB: Database>(
+    pub fn load_code<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         db: &mut DB,
@@ -645,7 +645,7 @@ impl JournaledState {
     }
 
     // account is already present and loaded.
-    pub fn sload<DB: Database>(
+    pub fn sload<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         key: U256,
@@ -683,7 +683,7 @@ impl JournaledState {
 
     /// account should already be present in our state.
     /// returns (original,present,new) slot
-    pub fn sstore<DB: Database>(
+    pub fn sstore<DB: Database + ?Sized>(
         &mut self,
         address: Address,
         key: U256,

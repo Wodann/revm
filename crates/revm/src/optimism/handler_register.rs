@@ -61,7 +61,10 @@ pub fn validate_tx_against_state<SPEC: Spec, EXT, DB: Database>(
     if context.evm.env.tx.optimism.source_hash.is_some() {
         return Ok(());
     }
-    mainnet::validate_tx_against_state::<SPEC, EXT, DB>(context)
+    mainnet::validate_tx_against_state::<SPEC, EXT, DB::Error>(
+        &mut context.evm,
+        &mut context.external,
+    )
 }
 
 /// Handle output of the transaction

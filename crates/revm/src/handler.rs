@@ -13,9 +13,9 @@ use crate::{
         Host,
     },
     primitives::{db::Database, spec_to_generic, HandlerCfg, Spec, SpecId},
-    Evm,
+    EvmImpl,
 };
-use register::{EvmHandler, HandleRegisters};
+use register::HandleRegisters;
 use std::vec::Vec;
 
 use self::register::{HandleRegister, HandleRegisterBox};
@@ -23,24 +23,24 @@ use self::register::{HandleRegister, HandleRegisterBox};
 /// Handler acts as a proxy and allow to define different behavior for different
 /// sections of the code. This allows nice integration of different chains or
 /// to disable some mainnet behavior.
-pub struct Handler<'a, H: Host + 'a, EXT, DB: Database> {
+pub struct Handler<'a, H: Host + 'a, EXT, DBError> {
     /// Handler config.
     pub cfg: HandlerCfg,
     /// Instruction table type.
     pub instruction_table: Option<InstructionTables<'a, H>>,
     /// Registers that will be called on initialization.
-    pub registers: Vec<HandleRegisters<EXT, DB>>,
+    pub registers: Vec<HandleRegisters<EXT, DBError>>,
     /// Validity handles.
-    pub validation: ValidationHandler<'a, EXT, DB>,
+    pub validation: ValidationHandler<'a, EXT, DBError>,
     /// Pre execution handle
-    pub pre_execution: PreExecutionHandler<'a, EXT, DB>,
+    pub pre_execution: PreExecutionHandler<'a, EXT, DBError>,
     /// post Execution handle
-    pub post_execution: PostExecutionHandler<'a, EXT, DB>,
+    pub post_execution: PostExecutionHandler<'a, EXT, DBError>,
     /// Execution loop that handles frames.
-    pub execution: ExecutionHandler<'a, EXT, DB>,
+    pub execution: ExecutionHandler<'a, EXT, DBError>,
 }
 
-impl<'a, EXT, DB: Database> EvmHandler<'a, EXT, DB> {
+impl<'a, EXT, DB: Database> Handler<'a, EvmImpl<'a, EXT, DB>, EXT, DB> {
     /// Created new Handler with given configuration.
     ///
     /// Internaly it calls `mainnet_with_spec` with the given spec id.
@@ -63,7 +63,7 @@ impl<'a, EXT, DB: Database> EvmHandler<'a, EXT, DB> {
         Self {
             cfg: HandlerCfg::new(SPEC::SPEC_ID),
             instruction_table: Some(InstructionTables::Plain(make_instruction_table::<
-                Evm<'a, EXT, DB>,
+                EvmImpl<'a, EXT, DB>,
                 SPEC,
             >())),
             registers: Vec::new(),
@@ -108,12 +108,14 @@ impl<'a, EXT, DB: Database> EvmHandler<'a, EXT, DB> {
     }
 
     /// Take instruction table.
-    pub fn take_instruction_table(&mut self) -> Option<InstructionTables<'a, Evm<'a, EXT, DB>>> {
+    pub fn take_instruction_table(
+        &mut self,
+    ) -> Option<InstructionTables<'a, EvmImpl<'a, EXT, DB>>> {
         self.instruction_table.take()
     }
 
     /// Set instruction table.
-    pub fn set_instruction_table(&mut self, table: InstructionTables<'a, Evm<'a, EXT, DB>>) {
+    pub fn set_instruction_table(&mut self, table: InstructionTables<'a, EvmImpl<'a, EXT, DB>>) {
         self.instruction_table = Some(table);
     }
 
@@ -171,7 +173,9 @@ impl<'a, EXT, DB: Database> EvmHandler<'a, EXT, DB> {
     }
 
     /// Creates the Handler with Generic Spec.
-    pub fn create_handle_generic<SPEC: Spec + 'static>(&mut self) -> EvmHandler<'a, EXT, DB> {
+    pub fn create_handle_generic<SPEC: Spec + 'static>(
+        &mut self,
+    ) -> Handler<'a, EvmImpl<'a, EXT, DB>, EXT, DB> {
         let registers = core::mem::take(&mut self.registers);
         let mut base_handler = Handler::mainnet::<SPEC>();
         // apply all registers to default handeler and raw mainnet instruction table.

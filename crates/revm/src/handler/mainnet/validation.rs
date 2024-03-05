@@ -1,12 +1,12 @@
 use revm_interpreter::gas;
 
 use crate::{
-    primitives::{db::Database, EVMError, Env, InvalidTransaction, Spec},
-    Context,
+    primitives::{EVMError, Env, InvalidTransaction, Spec},
+    EvmContext,
 };
 
 /// Validate environment for the mainnet.
-pub fn validate_env<SPEC: Spec, DB: Database>(env: &Env) -> Result<(), EVMError<DB::Error>> {
+pub fn validate_env<SPEC: Spec, DBError>(env: &Env) -> Result<(), EVMError<DBError>> {
     // Important: validate block before tx.
     env.validate_block_env::<SPEC>()?;
     env.validate_tx::<SPEC>()?;
@@ -14,19 +14,17 @@ pub fn validate_env<SPEC: Spec, DB: Database>(env: &Env) -> Result<(), EVMError<
 }
 
 /// Validates transaction against the state.
-pub fn validate_tx_against_state<SPEC: Spec, EXT, DB: Database>(
-    context: &mut Context<EXT, DB>,
-) -> Result<(), EVMError<DB::Error>> {
+pub fn validate_tx_against_state<SPEC: Spec, EXT, DBError>(
+    evm: &mut dyn EvmContext<DBError>,
+    ext: &mut EXT,
+) -> Result<(), EVMError<DBError>> {
     // load acc
-    let tx_caller = context.evm.env.tx.caller;
-    let (caller_account, _) = context
-        .evm
-        .journaled_state
-        .load_account(tx_caller, &mut context.evm.db)?;
+    let tx_caller = evm.env_mut().tx.caller;
+    let (caller_account, _) = evm
+        .journaled_state_mut()
+        .load_account(tx_caller, &mut evm.db_mut())?;
 
-    context
-        .evm
-        .env
+    evm.env_mut()
         .validate_tx_against_state::<SPEC>(caller_account)
         .map_err(EVMError::Transaction)?;
 
@@ -34,9 +32,7 @@ pub fn validate_tx_against_state<SPEC: Spec, EXT, DB: Database>(
 }
 
 /// Validate initial transaction gas.
-pub fn validate_initial_tx_gas<SPEC: Spec, DB: Database>(
-    env: &Env,
-) -> Result<u64, EVMError<DB::Error>> {
+pub fn validate_initial_tx_gas<SPEC: Spec, DBError>(env: &Env) -> Result<u64, EVMError<DBError>> {
     let input = &env.tx.data;
     let is_create = env.tx.transact_to.is_create();
     let access_list = &env.tx.access_list;

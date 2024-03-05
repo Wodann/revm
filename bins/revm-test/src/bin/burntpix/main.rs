@@ -7,7 +7,7 @@ use revm::{
         address, hex, keccak256, AccountInfo, Address, Bytecode, Bytes, ExecutionResult, Output,
         TransactTo, B256, U256,
     },
-    Evm,
+    EvmImpl,
 };
 use static_data::{
     BURNTPIX_ADDRESS_ONE, BURNTPIX_ADDRESS_THREE, BURNTPIX_ADDRESS_TWO, BURNTPIX_BYTECODE_FOUR,
@@ -35,7 +35,7 @@ fn main() {
 
     let db = init_db();
 
-    let mut evm = Evm::builder()
+    let mut evm = EvmImpl::builder()
         .modify_tx_env(|tx| {
             tx.caller = address!("1000000000000000000000000000000000000000");
             tx.transact_to = TransactTo::Call(BURNTPIX_MAIN_ADDRESS);

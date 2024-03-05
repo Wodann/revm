@@ -4,7 +4,7 @@ use crate::{
     primitives::{
         BlockEnv, CfgEnv, CfgEnvWithHandlerCfg, Env, EnvWithHandlerCfg, HandlerCfg, SpecId, TxEnv,
     },
-    Context, ContextWithHandlerCfg, Evm, Handler,
+    Context, ContextWithHandlerCfg, EvmImpl, Handler,
 };
 use core::marker::PhantomData;
 use std::boxed::Box;
@@ -15,7 +15,7 @@ use std::boxed::Box;
 pub struct EvmBuilder<'a, BuilderStage, EXT, DB: Database> {
     context: Context<EXT, DB>,
     /// Handler that will be used by EVM. It contains handle registers
-    handler: Handler<'a, Evm<'a, EXT, DB>, EXT, DB>,
+    handler: Handler<'a, EvmImpl<'a, EXT, DB>, EXT, DB>,
     /// Phantom data to mark the stage of the builder.
     phantom: PhantomData<BuilderStage>,
 }
@@ -187,7 +187,7 @@ impl<'a, EXT, DB: Database> EvmBuilder<'a, HandlerStage, EXT, DB> {
     /// It will preserve set handler and context.
     ///
     /// Builder is in HandlerStage and both database and external are set.
-    pub fn new(evm: Evm<'a, EXT, DB>) -> Self {
+    pub fn new(evm: EvmImpl<'a, EXT, DB>) -> Self {
         Self {
             context: evm.context,
             handler: evm.handler,
@@ -269,13 +269,13 @@ impl<'a, BuilderStage, EXT, DB: Database> EvmBuilder<'a, BuilderStage, EXT, DB> 
     /// Creates the default handler.
     ///
     /// This is useful for adding optimism handle register.
-    fn handler(handler_cfg: HandlerCfg) -> Handler<'a, Evm<'a, EXT, DB>, EXT, DB> {
+    fn handler(handler_cfg: HandlerCfg) -> Handler<'a, EvmImpl<'a, EXT, DB>, EXT, DB> {
         Handler::new(handler_cfg)
     }
 
     /// Builds the [`Evm`].
-    pub fn build(self) -> Evm<'a, EXT, DB> {
-        Evm::new(self.context, self.handler)
+    pub fn build(self) -> EvmImpl<'a, EXT, DB> {
+        EvmImpl::new(self.context, self.handler)
     }
 
     /// Register Handler that modifies the behavior of EVM.
@@ -414,54 +414,56 @@ mod test {
     use super::SpecId;
     use crate::{
         context::EvmContextImpl, db::EmptyDB, inspector::inspector_handle_register,
-        inspectors::NoOpInspector, Context, Evm,
+        inspectors::NoOpInspector, Context, EvmImpl,
     };
 
     #[test]
     fn simple_build() {
         // build without external with latest spec
-        Evm::builder().build();
+        EvmImpl::builder().build();
         // build with empty db
-        Evm::builder().with_empty_db().build();
+        EvmImpl::builder().with_empty_db().build();
         // build with_db
-        Evm::builder().with_db(EmptyDB::default()).build();
+        EvmImpl::builder().with_db(EmptyDB::default()).build();
         // build with empty external
-        Evm::builder().with_empty_db().build();
+        EvmImpl::builder().with_empty_db().build();
         // build with some external
-        Evm::builder()
+        EvmImpl::builder()
             .with_empty_db()
             .with_external_context(())
             .build();
         // build with spec
-        Evm::builder()
+        EvmImpl::builder()
             .with_empty_db()
             .with_spec_id(SpecId::HOMESTEAD)
             .build();
 
         // with with Env change in multiple places
-        Evm::builder()
+        EvmImpl::builder()
             .with_empty_db()
             .modify_tx_env(|tx| tx.gas_limit = 10)
             .build();
-        Evm::builder().modify_tx_env(|tx| tx.gas_limit = 10).build();
-        Evm::builder()
+        EvmImpl::builder()
+            .modify_tx_env(|tx| tx.gas_limit = 10)
+            .build();
+        EvmImpl::builder()
             .with_empty_db()
             .modify_tx_env(|tx| tx.gas_limit = 10)
             .build();
-        Evm::builder()
+        EvmImpl::builder()
             .with_empty_db()
             .modify_tx_env(|tx| tx.gas_limit = 10)
             .build();
 
         // with inspector handle
-        Evm::builder()
+        EvmImpl::builder()
             .with_empty_db()
             .with_external_context(NoOpInspector)
             .append_handler_register(inspector_handle_register)
             .build();
 
         // create the builder
-        let evm = Evm::builder()
+        let evm = EvmImpl::builder()
             .with_db(EmptyDB::default())
             .with_external_context(NoOpInspector)
             .append_handler_register(inspector_handle_register)
@@ -479,7 +481,7 @@ mod test {
     #[test]
     fn build_modify_build() {
         // build evm
-        let evm = Evm::builder()
+        let evm = EvmImpl::builder()
             .with_empty_db()
             .with_spec_id(SpecId::HOMESTEAD)
             .build();

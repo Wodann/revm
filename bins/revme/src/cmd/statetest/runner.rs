@@ -13,7 +13,7 @@ use revm::{
         calc_excess_blob_gas, keccak256, Bytecode, Bytes, EVMResultGeneric, Env, ExecutionResult,
         SpecId, TransactTo, B256, U256,
     },
-    Evm, State,
+    EvmImpl, State,
 };
 use serde_json::json;
 use std::{
@@ -112,7 +112,7 @@ fn check_evm_execution<EXT>(
     expected_output: Option<&Bytes>,
     test_name: &str,
     exec_result: &EVMResultGeneric<ExecutionResult, Infallible>,
-    evm: &Evm<'_, EXT, &mut State<EmptyDB>>,
+    evm: &EvmImpl<'_, EXT, &mut State<EmptyDB>>,
     print_json_outcome: bool,
 ) -> Result<(), TestError> {
     let logs_root = log_rlp_hash(&exec_result.as_ref().map(|r| r.logs()).unwrap_or_default());
@@ -345,7 +345,7 @@ pub fn execute_test_suite(
                     .with_cached_prestate(cache)
                     .with_bundle_update()
                     .build();
-                let mut evm = Evm::builder()
+                let mut evm = EvmImpl::builder()
                     .with_db(&mut state)
                     .modify_env(|e| *e = env.clone())
                     .with_spec_id(spec_id)
@@ -419,7 +419,7 @@ pub fn execute_test_suite(
 
                 let path = path.display();
                 println!("\nTraces:");
-                let mut evm = Evm::builder()
+                let mut evm = EvmImpl::builder()
                     .with_spec_id(spec_id)
                     .with_db(state)
                     .with_external_context(TracerEip3155::new(Box::new(stdout()), false, false))

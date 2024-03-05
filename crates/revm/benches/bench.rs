@@ -7,13 +7,13 @@ use revm::{
     primitives::{
         address, bytes, hex, BerlinSpec, Bytecode, BytecodeState, Bytes, TransactTo, U256,
     },
-    Evm,
+    EvmImpl,
 };
 use revm_interpreter::{opcode::make_instruction_table, SharedMemory, EMPTY_SHARED_MEMORY};
 use std::time::Duration;
 
 fn analysis(c: &mut Criterion) {
-    let evm = Evm::builder()
+    let evm = EvmImpl::builder()
         .modify_tx_env(|tx| {
             tx.caller = address!("0000000000000000000000000000000000000002");
             tx.transact_to = TransactTo::Call(address!("0000000000000000000000000000000000000000"));
@@ -55,7 +55,7 @@ fn analysis(c: &mut Criterion) {
 }
 
 fn snailtracer(c: &mut Criterion) {
-    let mut evm = Evm::builder()
+    let mut evm = EvmImpl::builder()
         .with_db(BenchmarkDB::new_bytecode(bytecode(SNAILTRACER)))
         .modify_tx_env(|tx| {
             tx.caller = address!("1000000000000000000000000000000000000000");
@@ -75,7 +75,7 @@ fn snailtracer(c: &mut Criterion) {
 }
 
 fn transfer(c: &mut Criterion) {
-    let mut evm = Evm::builder()
+    let mut evm = EvmImpl::builder()
         .with_db(BenchmarkDB::new_bytecode(Bytecode::new()))
         .modify_tx_env(|tx| {
             tx.caller = address!("0000000000000000000000000000000000000001");
@@ -90,7 +90,10 @@ fn transfer(c: &mut Criterion) {
     g.finish();
 }
 
-fn bench_transact<EXT>(g: &mut BenchmarkGroup<'_, WallTime>, evm: &mut Evm<'_, EXT, BenchmarkDB>) {
+fn bench_transact<EXT>(
+    g: &mut BenchmarkGroup<'_, WallTime>,
+    evm: &mut EvmImpl<'_, EXT, BenchmarkDB>,
+) {
     let state = match evm.context.evm.db.0.state {
         BytecodeState::Raw => "raw",
         BytecodeState::Checked { .. } => "checked",
@@ -100,7 +103,7 @@ fn bench_transact<EXT>(g: &mut BenchmarkGroup<'_, WallTime>, evm: &mut Evm<'_, E
     g.bench_function(id, |b| b.iter(|| evm.transact().unwrap()));
 }
 
-fn bench_eval(g: &mut BenchmarkGroup<'_, WallTime>, evm: &mut Evm<'static, (), BenchmarkDB>) {
+fn bench_eval(g: &mut BenchmarkGroup<'_, WallTime>, evm: &mut EvmImpl<'static, (), BenchmarkDB>) {
     g.bench_function("eval", |b| {
         let contract = Contract {
             input: evm.context.evm.env.tx.data.clone(),

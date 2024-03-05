@@ -2,7 +2,7 @@ use revm::{
     db::BenchmarkDB,
     interpreter::analysis::to_analysed,
     primitives::{address, bytes, Bytecode, Bytes, TransactTo},
-    Evm,
+    EvmImpl,
 };
 use std::time::Instant;
 
@@ -14,7 +14,7 @@ fn main() {
     let bytecode_analysed = to_analysed(Bytecode::new_raw(contract_data));
 
     // BenchmarkDB is dummy state that implements Database trait.
-    let mut evm = Evm::builder()
+    let mut evm = EvmImpl::builder()
         .modify_tx_env(|tx| {
             // execution globals block hash/gas_limit/coinbase/timestamp..
             tx.caller = address!("1000000000000000000000000000000000000000");

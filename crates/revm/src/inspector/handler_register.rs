@@ -5,7 +5,7 @@ use crate::{
     handler::register::{EvmHandler, EvmInstructionTables},
     interpreter::{opcode, opcode::BoxedInstruction, InstructionResult, Interpreter},
     primitives::EVMError,
-    Evm, FrameOrResult, FrameResult, Inspector, JournalEntry,
+    EvmImpl, FrameOrResult, FrameResult, Inspector, JournalEntry,
 };
 use std::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
 
@@ -56,7 +56,7 @@ pub fn inspector_handle_register<'a, DB: Database, EXT: GetInspector<DB::Error>>
         if let Some(i) = table.get_mut(index as usize) {
             let old = core::mem::replace(i, Box::new(|_, _| ()));
             *i = Box::new(
-                move |interpreter: &mut Interpreter, host: &mut Evm<'a, EXT, DB>| {
+                move |interpreter: &mut Interpreter, host: &mut EvmImpl<'a, EXT, DB>| {
                     let old_log_len = host.context.evm.journaled_state.logs.len();
                     old(interpreter, host);
                     // check if log was added. It is possible that revert happened
@@ -94,7 +94,7 @@ pub fn inspector_handle_register<'a, DB: Database, EXT: GetInspector<DB::Error>>
     if let Some(i) = table.get_mut(opcode::SELFDESTRUCT as usize) {
         let old = core::mem::replace(i, Box::new(|_, _| ()));
         *i = Box::new(
-            move |interpreter: &mut Interpreter, host: &mut Evm<'a, EXT, DB>| {
+            move |interpreter: &mut Interpreter, host: &mut EvmImpl<'a, EXT, DB>| {
                 // execute selfdestruct
                 old(interpreter, host);
                 // check if selfdestruct was successful and if journal entry is made.
@@ -224,12 +224,12 @@ pub fn inspector_instruction<
     'a,
     INSP: GetInspector<DB::Error>,
     DB: Database,
-    Instruction: Fn(&mut Interpreter, &mut Evm<'a, INSP, DB>) + 'a,
+    Instruction: Fn(&mut Interpreter, &mut EvmImpl<'a, INSP, DB>) + 'a,
 >(
     instruction: Instruction,
-) -> BoxedInstruction<'a, Evm<'a, INSP, DB>> {
+) -> BoxedInstruction<'a, EvmImpl<'a, INSP, DB>> {
     Box::new(
-        move |interpreter: &mut Interpreter, host: &mut Evm<'a, INSP, DB>| {
+        move |interpreter: &mut Interpreter, host: &mut EvmImpl<'a, INSP, DB>| {
             // SAFETY: as the PC was already incremented we need to subtract 1 to preserve the
             // old Inspector behavior.
             interpreter.instruction_pointer = unsafe { interpreter.instruction_pointer.sub(1) };
@@ -265,7 +265,7 @@ mod tests {
         inspectors::NoOpInspector,
         interpreter::{opcode::*, CallInputs, CreateInputs, Interpreter},
         primitives::BerlinSpec,
-        Evm, EvmContext, Inspector,
+        EvmContext, EvmImpl, Inspector,
     };
 
     use revm_interpreter::{CallOutcome, CreateOutcome};
@@ -273,10 +273,10 @@ mod tests {
     #[test]
     fn test_make_boxed_instruction_table() {
         // test that this pattern builds.
-        let inst: InstructionTable<Evm<'_, NoOpInspector, EmptyDB>> =
-            make_instruction_table::<Evm<'_, _, _>, BerlinSpec>();
-        let _test: BoxedInstructionTable<'_, Evm<'_, _, _>> =
-            make_boxed_instruction_table::<'_, Evm<'_, NoOpInspector, EmptyDB>, BerlinSpec, _>(
+        let inst: InstructionTable<EvmImpl<'_, NoOpInspector, EmptyDB>> =
+            make_instruction_table::<EvmImpl<'_, _, _>, BerlinSpec>();
+        let _test: BoxedInstructionTable<'_, EvmImpl<'_, _, _>> =
+            make_boxed_instruction_table::<'_, EvmImpl<'_, NoOpInspector, EmptyDB>, BerlinSpec, _>(
                 inst,
                 inspector_instruction,
             );
@@ -365,7 +365,7 @@ mod tests {
             inspector::inspector_handle_register,
             interpreter::opcode,
             primitives::{address, Bytecode, Bytes, TransactTo},
-            Evm,
+            EvmImpl,
         };
 
         let contract_data: Bytes = Bytes::from(vec![
@@ -384,7 +384,7 @@ mod tests {
         ]);
         let bytecode = Bytecode::new_raw(contract_data);
 
-        let mut evm: Evm<'_, StackInspector, BenchmarkDB> = Evm::builder()
+        let mut evm: EvmImpl<'_, StackInspector, BenchmarkDB> = EvmImpl::builder()
             .with_db(BenchmarkDB::new_bytecode(bytecode.clone()))
             .with_external_context(StackInspector::default())
             .modify_tx_env(|tx| {
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn test_inspector_reg() {
         let mut noop = NoOpInspector;
-        let _evm = Evm::builder()
+        let _evm = EvmImpl::builder()
             .with_external_context(&mut noop)
             .append_handler_register(inspector_handle_register)
             .build();

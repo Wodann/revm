@@ -1,14 +1,14 @@
 use revm::{
     db::BenchmarkDB,
     primitives::{Bytecode, TransactTo, U256},
-    Evm,
+    EvmImpl,
 };
 
 use std::time::Duration;
 
 fn main() {
     // BenchmarkDB is dummy state that implements Database trait.
-    let mut evm = Evm::builder()
+    let mut evm = EvmImpl::builder()
         .with_db(BenchmarkDB::new_bytecode(Bytecode::new()))
         .modify_tx_env(|tx| {
             // execution globals block hash/gas_limit/coinbase/timestamp..

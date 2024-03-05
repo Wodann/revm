@@ -1,11 +1,24 @@
-use crate::{db::Database, handler::Handler, interpreter::opcode::InstructionTables, Evm};
+use crate::{
+    db::Database,
+    handler::{Handler, HandlerCfg},
+    interpreter::opcode::InstructionTables,
+    EvmImpl,
+};
 use std::boxed::Box;
 
 /// EVM Handler
-pub type EvmHandler<'a, EXT, DB> = Handler<'a, Evm<'a, EXT, DB>, EXT, DB>;
+pub trait EvmHandler<'a, EXT, DBError> {
+    fn cfg(&self) -> &HandlerCfg;
+
+    fn instruction_table_mut(
+        &mut self,
+    ) -> &mut Option<InstructionTables<'a, EvmImpl<'a, EXT, DBError>>>;
+}
+
+// pub type EvmHandler<'a, EXT, DB> = Handler<'a, EvmImpl<'a, EXT, DB>, EXT, DB>;
 
 /// EVM Instruction Tables
-pub type EvmInstructionTables<'a, EXT, DB> = InstructionTables<'a, Evm<'a, EXT, DB>>;
+pub type EvmInstructionTables<'a, EXT, DB> = InstructionTables<'a, EvmImpl<'a, EXT, DB>>;
 
 // Handle register
 pub type HandleRegister<EXT, DB> = for<'a> fn(&mut EvmHandler<'a, EXT, DB>);

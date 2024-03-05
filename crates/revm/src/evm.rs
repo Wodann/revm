@@ -22,7 +22,7 @@ pub const CALL_STACK_LIMIT: u64 = 1024;
 
 /// EVM instance containing both internal EVM context and external context
 /// and the handler that dictates the logic of EVM (or hardfork specification).
-pub struct Evm<'a, EXT, DB: Database> {
+pub struct EvmImpl<'a, EXT, DB: Database> {
     /// Context of execution, containing both EVM and external context.
     pub context: Context<EXT, DB>,
     /// Handler of EVM that contains all the logic. Handler contains specification id
@@ -30,7 +30,7 @@ pub struct Evm<'a, EXT, DB: Database> {
     pub handler: Handler<'a, Self, EXT, DB>,
 }
 
-impl<EXT, DB> fmt::Debug for Evm<'_, EXT, DB>
+impl<EXT, DB> fmt::Debug for EvmImpl<'_, EXT, DB>
 where
     EXT: fmt::Debug,
     DB: Database + fmt::Debug,
@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<EXT, DB: Database + DatabaseCommit> Evm<'_, EXT, DB> {
+impl<EXT, DB: Database + DatabaseCommit> EvmImpl<'_, EXT, DB> {
     /// Commit the changes to the database.
     pub fn transact_commit(&mut self) -> Result<ExecutionResult, EVMError<DB::Error>> {
         let ResultAndState { result, state } = self.transact()?;
@@ -52,21 +52,21 @@ impl<EXT, DB: Database + DatabaseCommit> Evm<'_, EXT, DB> {
     }
 }
 
-impl<'a> Evm<'a, (), EmptyDB> {
+impl<'a> EvmImpl<'a, (), EmptyDB> {
     /// Returns evm builder with empty database and empty external context.
     pub fn builder() -> EvmBuilder<'a, SetGenericStage, (), EmptyDB> {
         EvmBuilder::default()
     }
 }
 
-impl<'a, EXT, DB: Database> Evm<'a, EXT, DB> {
+impl<'a, EXT, DB: Database> EvmImpl<'a, EXT, DB> {
     /// Create new EVM.
     pub fn new(
         mut context: Context<EXT, DB>,
         handler: Handler<'a, Self, EXT, DB>,
-    ) -> Evm<'a, EXT, DB> {
+    ) -> EvmImpl<'a, EXT, DB> {
         context.evm.journaled_state.set_spec_id(handler.cfg.spec_id);
-        Evm { context, handler }
+        EvmImpl { context, handler }
     }
 
     /// Allow for evm setting to be modified by feeding current evm
@@ -76,7 +76,7 @@ impl<'a, EXT, DB: Database> Evm<'a, EXT, DB> {
     }
 }
 
-impl<EXT, DB: Database> Evm<'_, EXT, DB> {
+impl<EXT, DB: Database> EvmImpl<'_, EXT, DB> {
     /// Returns specification (hardfork) that the EVM is instanced with.
     ///
     /// SpecId depends on the handler.
@@ -94,7 +94,7 @@ impl<EXT, DB: Database> Evm<'_, EXT, DB> {
             .initial_tx_gas(&self.context.evm.env)?;
         self.handler
             .validation()
-            .tx_against_state(&mut self.context)?;
+            .tx_against_state(&mut self.context.evm, &mut self.context.external)?;
         Ok(())
     }
 
@@ -165,7 +165,7 @@ impl<EXT, DB: Database> Evm<'_, EXT, DB> {
             .initial_tx_gas(&self.context.evm.env)?;
         self.handler
             .validation()
-            .tx_against_state(&mut self.context)?;
+            .tx_against_state(&mut self.context.evm, &mut self.context.external)?;
 
         let output = self.transact_preverified_inner(initial_gas_spend);
         self.handler.post_execution().end(&mut self.context, output)
@@ -369,7 +369,7 @@ impl<EXT, DB: Database> Evm<'_, EXT, DB> {
     }
 }
 
-impl<EXT, DB: Database> Host for Evm<'_, EXT, DB> {
+impl<EXT, DB: Database> Host for EvmImpl<'_, EXT, DB> {
     fn env_mut(&mut self) -> &mut Env {
         &mut self.context.evm.env
     }

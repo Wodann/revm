@@ -156,7 +156,7 @@ mod tests {
             inspector::inspector_handle_register,
             interpreter::opcode,
             primitives::{address, Bytecode, Bytes, TransactTo},
-            Evm,
+            EvmImpl,
         };
 
         let contract_data: Bytes = Bytes::from(vec![
@@ -176,7 +176,7 @@ mod tests {
         ]);
         let bytecode = Bytecode::new_raw(contract_data);
 
-        let mut evm: Evm<'_, StackInspector, BenchmarkDB> = Evm::builder()
+        let mut evm: EvmImpl<'_, StackInspector, BenchmarkDB> = EvmImpl::builder()
             .with_db(BenchmarkDB::new_bytecode(bytecode.clone()))
             .with_external_context(StackInspector::default())
             .modify_tx_env(|tx| {

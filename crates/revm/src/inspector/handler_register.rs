@@ -10,12 +10,12 @@ use crate::{
 use std::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
 
 /// Provides access to an `Inspector` instance.
-pub trait GetInspector<DB: Database> {
-    fn get_inspector(&mut self) -> &mut dyn Inspector<DB>;
+pub trait GetInspector<DBError> {
+    fn get_inspector(&mut self) -> &mut dyn Inspector<DBError>;
 }
 
-impl<DB: Database, INSP: Inspector<DB>> GetInspector<DB> for INSP {
-    fn get_inspector(&mut self) -> &mut dyn Inspector<DB> {
+impl<DBError, INSP: Inspector<DBError>> GetInspector<DBError> for INSP {
+    fn get_inspector(&mut self) -> &mut dyn Inspector<DBError> {
         self
     }
 }
@@ -32,7 +32,7 @@ impl<DB: Database, INSP: Inspector<DB>> GetInspector<DB> for INSP {
 /// A few instructions handlers are wrapped twice once for `step` and `step_end`
 /// and in case of Logs and Selfdestruct wrapper is wrapped again for the
 /// `log` and `selfdestruct` calls.
-pub fn inspector_handle_register<'a, DB: Database, EXT: GetInspector<DB>>(
+pub fn inspector_handle_register<'a, DB: Database, EXT: GetInspector<DB::Error>>(
     handler: &mut EvmHandler<'a, EXT, DB>,
 ) {
     // Every instruction inside flat table that is going to be wrapped by inspector calls.
@@ -222,7 +222,7 @@ pub fn inspector_handle_register<'a, DB: Database, EXT: GetInspector<DB>>(
 /// Outer closure that calls Inspector for every instruction.
 pub fn inspector_instruction<
     'a,
-    INSP: GetInspector<DB>,
+    INSP: GetInspector<DB::Error>,
     DB: Database,
     Instruction: Fn(&mut Interpreter, &mut Evm<'a, INSP, DB>) + 'a,
 >(
@@ -265,7 +265,7 @@ mod tests {
         inspectors::NoOpInspector,
         interpreter::{opcode::*, CallInputs, CreateInputs, Interpreter},
         primitives::BerlinSpec,
-        Database, Evm, EvmContext, Inspector,
+        Evm, EvmContext, Inspector,
     };
 
     use revm_interpreter::{CallOutcome, CreateOutcome};
@@ -291,65 +291,69 @@ mod tests {
         call_end: bool,
     }
 
-    impl<DB: Database> Inspector<DB> for StackInspector {
-        fn initialize_interp(&mut self, _interp: &mut Interpreter, _context: &mut EvmContext<DB>) {
+    impl<DBError> Inspector<DBError> for StackInspector {
+        fn initialize_interp(
+            &mut self,
+            _interp: &mut Interpreter,
+            _context: &mut dyn EvmContext<DBError>,
+        ) {
             if self.initialize_interp_called {
                 unreachable!("initialize_interp should not be called twice")
             }
             self.initialize_interp_called = true;
         }
 
-        fn step(&mut self, _interp: &mut Interpreter, _context: &mut EvmContext<DB>) {
+        fn step(&mut self, _interp: &mut Interpreter, _context: &mut dyn EvmContext<DBError>) {
             self.step += 1;
         }
 
-        fn step_end(&mut self, _interp: &mut Interpreter, _context: &mut EvmContext<DB>) {
+        fn step_end(&mut self, _interp: &mut Interpreter, _context: &mut dyn EvmContext<DBError>) {
             self.step_end += 1;
         }
 
         fn call(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             _call: &mut CallInputs,
         ) -> Option<CallOutcome> {
             if self.call {
                 unreachable!("call should not be called twice")
             }
             self.call = true;
-            assert_eq!(context.journaled_state.depth(), 0);
+            assert_eq!(context.journaled_state_mut().depth(), 0);
             None
         }
 
         fn call_end(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             _inputs: &CallInputs,
             outcome: CallOutcome,
         ) -> CallOutcome {
             if self.call_end {
                 unreachable!("call_end should not be called twice")
             }
-            assert_eq!(context.journaled_state.depth(), 0);
+            assert_eq!(context.journaled_state_mut().depth(), 0);
             self.call_end = true;
             outcome
         }
 
         fn create(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             _call: &mut CreateInputs,
         ) -> Option<CreateOutcome> {
-            assert_eq!(context.journaled_state.depth(), 0);
+            assert_eq!(context.journaled_state_mut().depth(), 0);
             None
         }
 
         fn create_end(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             _inputs: &CreateInputs,
             outcome: CreateOutcome,
         ) -> CreateOutcome {
-            assert_eq!(context.journaled_state.depth(), 0);
+            assert_eq!(context.journaled_state_mut().depth(), 0);
             outcome
         }
     }

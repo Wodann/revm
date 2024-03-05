@@ -4,7 +4,6 @@ use revm_interpreter::CallOutcome;
 
 use crate::{
     interpreter::{CallInputs, CreateInputs, CreateOutcome},
-    primitives::db::Database,
     EvmContext, Inspector,
 };
 
@@ -26,11 +25,11 @@ impl GasInspector {
     }
 }
 
-impl<DB: Database> Inspector<DB> for GasInspector {
+impl<DBError> Inspector<DBError> for GasInspector {
     fn initialize_interp(
         &mut self,
         interp: &mut crate::interpreter::Interpreter,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
     ) {
         self.gas_remaining = interp.gas.limit();
     }
@@ -38,7 +37,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
     fn step_end(
         &mut self,
         interp: &mut crate::interpreter::Interpreter,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
     ) {
         let last_gas = core::mem::replace(&mut self.gas_remaining, interp.gas.remaining());
         self.last_gas_cost = last_gas.saturating_sub(self.last_gas_cost);
@@ -46,7 +45,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
     fn call_end(
         &mut self,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
         _inputs: &CallInputs,
         mut outcome: CallOutcome,
     ) -> CallOutcome {
@@ -62,7 +61,7 @@ impl<DB: Database> Inspector<DB> for GasInspector {
 
     fn create_end(
         &mut self,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
         _inputs: &CreateInputs,
         outcome: CreateOutcome,
     ) -> CreateOutcome {
@@ -80,7 +79,7 @@ mod tests {
         inspectors::GasInspector,
         interpreter::{CallInputs, CreateInputs, Interpreter},
         primitives::Log,
-        Database, EvmContext, Inspector,
+        EvmContext, Inspector,
     };
 
     #[derive(Default, Debug)]
@@ -90,21 +89,25 @@ mod tests {
         gas_remaining_steps: Vec<(usize, u64)>,
     }
 
-    impl<DB: Database> Inspector<DB> for StackInspector {
-        fn initialize_interp(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    impl<DBError> Inspector<DBError> for StackInspector {
+        fn initialize_interp(
+            &mut self,
+            interp: &mut Interpreter,
+            context: &mut dyn EvmContext<DBError>,
+        ) {
             self.gas_inspector.initialize_interp(interp, context);
         }
 
-        fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+        fn step(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
             self.pc = interp.program_counter();
             self.gas_inspector.step(interp, context);
         }
 
-        fn log(&mut self, context: &mut EvmContext<DB>, log: &Log) {
+        fn log(&mut self, context: &mut dyn EvmContext<DBError>, log: &Log) {
             self.gas_inspector.log(context, log);
         }
 
-        fn step_end(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+        fn step_end(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
             self.gas_inspector.step_end(interp, context);
             self.gas_remaining_steps
                 .push((self.pc, self.gas_inspector.gas_remaining()));
@@ -112,7 +115,7 @@ mod tests {
 
         fn call(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             call: &mut CallInputs,
         ) -> Option<CallOutcome> {
             self.gas_inspector.call(context, call)
@@ -120,7 +123,7 @@ mod tests {
 
         fn call_end(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             inputs: &CallInputs,
             outcome: CallOutcome,
         ) -> CallOutcome {
@@ -129,7 +132,7 @@ mod tests {
 
         fn create(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             call: &mut CreateInputs,
         ) -> Option<CreateOutcome> {
             self.gas_inspector.create(context, call);
@@ -138,7 +141,7 @@ mod tests {
 
         fn create_end(
             &mut self,
-            context: &mut EvmContext<DB>,
+            context: &mut dyn EvmContext<DBError>,
             inputs: &CreateInputs,
             outcome: CreateOutcome,
         ) -> CreateOutcome {

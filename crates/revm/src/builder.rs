@@ -413,8 +413,8 @@ impl<'a, BuilderStage, EXT, DB: Database> EvmBuilder<'a, BuilderStage, EXT, DB> 
 mod test {
     use super::SpecId;
     use crate::{
-        db::EmptyDB, inspector::inspector_handle_register, inspectors::NoOpInspector, Context, Evm,
-        EvmContext,
+        context::EvmContextImpl, db::EmptyDB, inspector::inspector_handle_register,
+        inspectors::NoOpInspector, Context, Evm,
     };
 
     #[test]
@@ -471,7 +471,7 @@ mod test {
 
         let Context {
             external,
-            evm: EvmContext { db, .. },
+            evm: EvmContextImpl { db, .. },
         } = evm.into_context();
         let _ = (external, db);
     }

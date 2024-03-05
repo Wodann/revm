@@ -8,7 +8,7 @@ use crate::{
     inspectors::GasInspector,
     interpreter::{opcode, CallInputs, CreateInputs, Interpreter},
     primitives::{Address, U256},
-    Database, EvmContext, Inspector,
+    EvmContext, Inspector,
 };
 
 /// Custom print [Inspector], it has step level information of execution.
@@ -19,14 +19,18 @@ pub struct CustomPrintTracer {
     gas_inspector: GasInspector,
 }
 
-impl<DB: Database> Inspector<DB> for CustomPrintTracer {
-    fn initialize_interp(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+impl<DBError> Inspector<DBError> for CustomPrintTracer {
+    fn initialize_interp(
+        &mut self,
+        interp: &mut Interpreter,
+        context: &mut dyn EvmContext<DBError>,
+    ) {
         self.gas_inspector.initialize_interp(interp, context);
     }
 
     // get opcode by calling `interp.contract.opcode(interp.program_counter())`.
     // all other information can be obtained from interp.
-    fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    fn step(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
         let opcode = interp.current_opcode();
         let opcode_str = opcode::OPCODE_JUMPMAP[opcode as usize];
 
@@ -36,7 +40,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
         println!(
             "depth:{}, PC:{}, gas:{:#x}({}), OPCODE: {:?}({:?})  refund:{:#x}({}) Stack:{:?}, Data size:{}",
-            context.journaled_state.depth(),
+            context.journaled_state_mut().depth(),
             interp.program_counter(),
             gas_remaining,
             gas_remaining,
@@ -51,13 +55,13 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
         self.gas_inspector.step(interp, context);
     }
 
-    fn step_end(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    fn step_end(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
         self.gas_inspector.step_end(interp, context);
     }
 
     fn call_end(
         &mut self,
-        context: &mut EvmContext<DB>,
+        context: &mut dyn EvmContext<DBError>,
         inputs: &CallInputs,
         outcome: CallOutcome,
     ) -> CallOutcome {
@@ -66,7 +70,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn create_end(
         &mut self,
-        context: &mut EvmContext<DB>,
+        context: &mut dyn EvmContext<DBError>,
         inputs: &CreateInputs,
         outcome: CreateOutcome,
     ) -> CreateOutcome {
@@ -75,7 +79,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn call(
         &mut self,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
         inputs: &mut CallInputs,
     ) -> Option<CallOutcome> {
         println!(
@@ -91,7 +95,7 @@ impl<DB: Database> Inspector<DB> for CustomPrintTracer {
 
     fn create(
         &mut self,
-        _context: &mut EvmContext<DB>,
+        _context: &mut dyn EvmContext<DBError>,
         inputs: &mut CreateInputs,
     ) -> Option<CreateOutcome> {
         println!(

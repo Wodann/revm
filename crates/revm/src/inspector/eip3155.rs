@@ -1,7 +1,7 @@
 use crate::{
     inspectors::GasInspector,
     interpreter::{opcode, CallInputs, CallOutcome, Interpreter},
-    primitives::{db::Database, hex, HashMap, B256, U256},
+    primitives::{hex, HashMap, B256, U256},
     EvmContext, Inspector,
 };
 use serde::Serialize;
@@ -121,12 +121,16 @@ impl TracerEip3155 {
     }
 }
 
-impl<DB: Database> Inspector<DB> for TracerEip3155 {
-    fn initialize_interp(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+impl<DBError> Inspector<DBError> for TracerEip3155 {
+    fn initialize_interp(
+        &mut self,
+        interp: &mut Interpreter,
+        context: &mut dyn EvmContext<DBError>,
+    ) {
         self.gas_inspector.initialize_interp(interp, context);
     }
 
-    fn step(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    fn step(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
         self.gas_inspector.step(interp, context);
         self.stack = interp.stack.data().clone();
         self.pc = interp.program_counter();
@@ -135,7 +139,7 @@ impl<DB: Database> Inspector<DB> for TracerEip3155 {
         self.gas = interp.gas.remaining();
     }
 
-    fn step_end(&mut self, interp: &mut Interpreter, context: &mut EvmContext<DB>) {
+    fn step_end(&mut self, interp: &mut Interpreter, context: &mut dyn EvmContext<DBError>) {
         self.gas_inspector.step_end(interp, context);
         if self.skip {
             self.skip = false;
@@ -148,7 +152,7 @@ impl<DB: Database> Inspector<DB> for TracerEip3155 {
             gas: hex_number(self.gas),
             gas_cost: hex_number(self.gas_inspector.last_gas_cost()),
             stack: self.stack.iter().map(hex_number_u256).collect(),
-            depth: context.journaled_state.depth(),
+            depth: context.journaled_state_mut().depth(),
             return_data: "0x".to_string(),
             refund: "0x0".to_string(),
             mem_size: self.mem_size.to_string(),
@@ -168,12 +172,12 @@ impl<DB: Database> Inspector<DB> for TracerEip3155 {
 
     fn call_end(
         &mut self,
-        context: &mut EvmContext<DB>,
+        context: &mut dyn EvmContext<DBError>,
         inputs: &CallInputs,
         outcome: CallOutcome,
     ) -> CallOutcome {
         let outcome = self.gas_inspector.call_end(context, inputs, outcome);
-        if context.journaled_state.depth() == 0 {
+        if context.journaled_state_mut().depth() == 0 {
             let value = Summary {
                 state_root: B256::ZERO.to_string(),
                 output: outcome.result.output.to_string(),

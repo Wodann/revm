@@ -15,10 +15,10 @@ use crate::{
 use revm_interpreter::SStoreResult;
 use std::boxed::Box;
 
-/// Main Context structure that contains both EvmContext and External context.
+/// Main Context structure that contains both EvmContextImpl and External context.
 pub struct Context<EXT, DB: Database> {
     /// Evm Context.
-    pub evm: EvmContext<DB>,
+    pub evm: EvmContextImpl<DB>,
     /// External contexts.
     pub external: EXT,
 }
@@ -45,7 +45,7 @@ impl Context<(), EmptyDB> {
     /// Creates empty context. This is useful for testing.
     pub fn new_empty() -> Context<(), EmptyDB> {
         Context {
-            evm: EvmContext::new(EmptyDB::new()),
+            evm: EvmContextImpl::new(EmptyDB::new()),
             external: (),
         }
     }
@@ -55,7 +55,7 @@ impl<DB: Database> Context<(), DB> {
     /// Creates new context with database.
     pub fn new_with_db(db: DB) -> Context<(), DB> {
         Context {
-            evm: EvmContext::new_with_env(db, Box::default()),
+            evm: EvmContextImpl::new_with_env(db, Box::default()),
             external: (),
         }
     }
@@ -63,7 +63,7 @@ impl<DB: Database> Context<(), DB> {
 
 impl<EXT, DB: Database> Context<EXT, DB> {
     /// Creates new context with external and database.
-    pub fn new(evm: EvmContext<DB>, external: EXT) -> Context<EXT, DB> {
+    pub fn new(evm: EvmContextImpl<DB>, external: EXT) -> Context<EXT, DB> {
         Context { evm, external }
     }
 }
@@ -83,9 +83,24 @@ impl<EXT, DB: Database> ContextWithHandlerCfg<EXT, DB> {
     }
 }
 
+pub trait EvmContext<DBError> {
+    fn env_mut(&mut self) -> &mut Env;
+
+    fn journaled_state_mut(&mut self) -> &mut JournaledState;
+
+    fn db_mut(&mut self) -> &mut dyn Database<Error = DBError>;
+
+    fn error_mut(&mut self) -> &mut Result<(), EVMError<DBError>>;
+
+    fn precompiles_mut(&mut self) -> &mut Precompiles;
+
+    #[cfg(feature = "optimism")]
+    fn l1_block_info_mut(&mut self) -> &mut Option<crate::optimism::L1BlockInfo>;
+}
+
 /// EVM contexts contains data that EVM needs for execution.
 #[derive(Debug)]
-pub struct EvmContext<DB: Database> {
+pub struct EvmContextImpl<DB: Database> {
     /// EVM Environment contains all the information about config, block and transaction that
     /// evm needs.
     pub env: Box<Env>,
@@ -102,7 +117,34 @@ pub struct EvmContext<DB: Database> {
     pub l1_block_info: Option<crate::optimism::L1BlockInfo>,
 }
 
-impl<DB: Database + Clone> Clone for EvmContext<DB>
+impl<DB: Database> EvmContext<DB::Error> for EvmContextImpl<DB> {
+    fn env_mut(&mut self) -> &mut Env {
+        self.env.as_mut()
+    }
+
+    fn journaled_state_mut(&mut self) -> &mut JournaledState {
+        &mut self.journaled_state
+    }
+
+    fn db_mut(&mut self) -> &mut dyn Database<Error = DB::Error> {
+        &mut self.db
+    }
+
+    fn error_mut(&mut self) -> &mut Result<(), EVMError<DB::Error>> {
+        &mut self.error
+    }
+
+    fn precompiles_mut(&mut self) -> &mut Precompiles {
+        &mut self.precompiles
+    }
+
+    #[cfg(feature = "optimism")]
+    fn l1_block_info_mut(&mut self) -> &mut Option<crate::optimism::L1BlockInfo> {
+        &mut self.l1_block_info
+    }
+}
+
+impl<DB: Database + Clone> Clone for EvmContextImpl<DB>
 where
     DB::Error: Clone,
 {
@@ -119,9 +161,9 @@ where
     }
 }
 
-impl<DB: Database> EvmContext<DB> {
-    pub fn with_db<ODB: Database>(self, db: ODB) -> EvmContext<ODB> {
-        EvmContext {
+impl<DB: Database> EvmContextImpl<DB> {
+    pub fn with_db<ODB: Database>(self, db: ODB) -> EvmContextImpl<ODB> {
+        EvmContextImpl {
             env: self.env,
             journaled_state: self.journaled_state,
             db,
@@ -558,7 +600,7 @@ impl<DB: Database> EvmContext<DB> {
         interpreter_result.result = InstructionResult::Return;
     }
 }
-/// Test utilities for the [`EvmContext`].
+/// Test utilities for the [`EvmContextImpl`].
 #[cfg(any(test, feature = "test-utils"))]
 pub(crate) mod test_utils {
     use super::*;
@@ -600,7 +642,7 @@ pub(crate) mod test_utils {
         env: Box<Env>,
         mut db: CacheDB<EmptyDB>,
         balance: U256,
-    ) -> EvmContext<CacheDB<EmptyDB>> {
+    ) -> EvmContextImpl<CacheDB<EmptyDB>> {
         db.insert_account_info(
             test_utils::MOCK_CALLER,
             crate::primitives::AccountInfo {
@@ -617,8 +659,8 @@ pub(crate) mod test_utils {
     pub fn create_cache_db_evm_context(
         env: Box<Env>,
         db: CacheDB<EmptyDB>,
-    ) -> EvmContext<CacheDB<EmptyDB>> {
-        EvmContext {
+    ) -> EvmContextImpl<CacheDB<EmptyDB>> {
+        EvmContextImpl {
             env,
             journaled_state: JournaledState::new(SpecId::CANCUN, HashSet::new()),
             db,
@@ -629,9 +671,9 @@ pub(crate) mod test_utils {
         }
     }
 
-    /// Returns a new `EvmContext` with an empty journaled state.
-    pub fn create_empty_evm_context(env: Box<Env>, db: EmptyDB) -> EvmContext<EmptyDB> {
-        EvmContext {
+    /// Returns a new `EvmContextImpl` with an empty journaled state.
+    pub fn create_empty_evm_context(env: Box<Env>, db: EmptyDB) -> EvmContextImpl<EmptyDB> {
+        EvmContextImpl {
             env,
             journaled_state: JournaledState::new(SpecId::CANCUN, HashSet::new()),
             db,
@@ -651,7 +693,7 @@ mod tests {
     use crate::{Frame, JournalEntry};
     use test_utils::*;
 
-    // Tests that the `EVMContext::make_call_frame` function returns an error if the
+    // Tests that the `EvmContextImpl::make_call_frame` function returns an error if the
     // call stack is too deep.
     #[test]
     fn test_make_call_frame_stack_too_deep() {
@@ -671,7 +713,7 @@ mod tests {
         );
     }
 
-    // Tests that the `EVMContext::make_call_frame` function returns an error if the
+    // Tests that the `EvmContextImpl::make_call_frame` function returns an error if the
     // transfer fails on the journaled state. It also verifies that the revert was
     // checkpointed on the journaled state correctly.
     #[test]

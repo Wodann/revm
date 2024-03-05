@@ -2,7 +2,7 @@ use revm::{
     db::{CacheDB, EmptyDB, WrapDatabaseRef},
     handler::register::HandleRegister,
     inspector_handle_register,
-    inspectors::{NoOpInspector, TracerEip3155},
+    inspectors::TracerEip3155,
     primitives::ResultAndState,
     DatabaseCommit, DatabaseRef, Evm,
 };
@@ -54,12 +54,7 @@ fn run_transaction_and_commit(db: &mut CacheDB<EmptyDB>) -> anyhow::Result<()> {
     let ResultAndState { state: changes, .. } = {
         let rdb = &*db;
 
-        let mut evm = Evm::builder()
-            .with_ref_db(rdb)
-            .with_external_context(NoOpInspector)
-            .append_handler_register(inspector_handle_register)
-            .build();
-
+        let mut evm = Evm::builder().with_ref_db(rdb).build();
         evm.transact()?
     };
 

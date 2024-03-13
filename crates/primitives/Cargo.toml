@@ -55,6 +55,7 @@ dev = [
     "optional_eip3607",
     "optional_gas_refund",
     "optional_no_base_fee",
+    "optional_nonce_check",
 ]
 memory_limit = []
 no_gas_measuring = []
@@ -63,6 +64,7 @@ optional_block_gas_limit = []
 optional_eip3607 = []
 optional_gas_refund = []
 optional_no_base_fee = []
+optional_nonce_check = []
 
 # See comments in `revm-precompile`
 c-kzg = ["dep:c-kzg", "dep:once_cell"]

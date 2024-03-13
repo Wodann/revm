@@ -298,6 +298,9 @@ pub struct CfgEnv {
     /// This is useful for testing method calls with zero gas price.
     #[cfg(feature = "optional_no_base_fee")]
     pub disable_base_fee: bool,
+    /// Skip nonce checks if true.
+    #[cfg(feature = "optional_nonce_check")]
+    pub disable_nonce_check: bool,
     /// Enables Optimism's execution changes for deposit transactions and fee
     /// collection. Hot toggling the optimism field gives applications built
     /// on revm the ability to switch optimism execution on and off at runtime,
@@ -359,6 +362,16 @@ impl CfgEnv {
         false
     }
 
+    #[cfg(feature = "optional_nonce_check")]
+    pub fn is_nonce_check_disabled(&self) -> bool {
+        self.disable_nonce_check
+    }
+
+    #[cfg(not(feature = "optional_nonce_check"))]
+    pub fn is_nonce_check_disabled(&self) -> bool {
+        false
+    }
+
     #[cfg(feature = "optimism")]
     pub fn is_optimism(&self) -> bool {
         self.optimism
@@ -404,6 +417,8 @@ impl Default for CfgEnv {
             disable_gas_refund: false,
             #[cfg(feature = "optional_no_base_fee")]
             disable_base_fee: false,
+            #[cfg(feature = "optional_nonce_check")]
+            disable_nonce_check: false,
             #[cfg(feature = "optimism")]
             optimism: false,
         }
@@ -623,16 +638,18 @@ impl Env {
         }
 
         // Check that the transaction's nonce is correct
-        if let Some(tx) = self.tx.nonce {
-            let state = account.info.nonce;
-            match tx.cmp(&state) {
-                Ordering::Greater => {
-                    return Err(InvalidTransaction::NonceTooHigh { tx, state });
+        if !self.cfg.is_nonce_check_disabled() {
+            if let Some(tx) = self.tx.nonce {
+                let state = account.info.nonce;
+                match tx.cmp(&state) {
+                    Ordering::Greater => {
+                        return Err(InvalidTransaction::NonceTooHigh { tx, state });
+                    }
+                    Ordering::Less => {
+                        return Err(InvalidTransaction::NonceTooLow { tx, state });
+                    }
+                    _ => {}
                 }
-                Ordering::Less => {
-                    return Err(InvalidTransaction::NonceTooLow { tx, state });
-                }
-                _ => {}
             }
         }
 

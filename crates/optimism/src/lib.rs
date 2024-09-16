@@ -60,8 +60,8 @@ pub trait OptimismTransaction {
 }
 
 /// Trait for an Optimism chain spec.
-pub trait OptimismWiring:
-    revm::EvmWiring<
+pub trait OptimismChainSpec:
+    revm::primitives::ChainSpec<
     ChainContext: OptimismContext,
     Hardfork = OptimismSpecId,
     HaltReason = OptimismHaltReason,
@@ -71,8 +71,8 @@ pub trait OptimismWiring:
 {
 }
 
-impl<EvmWiringT> OptimismWiring for EvmWiringT where
-    EvmWiringT: revm::EvmWiring<
+impl<ChainSpecT> OptimismChainSpec for ChainSpecT where
+    ChainSpecT: revm::primitives::ChainSpec<
         ChainContext: OptimismContext,
         Hardfork = OptimismSpecId,
         HaltReason = OptimismHaltReason,
@@ -81,3 +81,8 @@ impl<EvmWiringT> OptimismWiring for EvmWiringT where
     >
 {
 }
+
+/// Trait for Optimism `EvmWiring`.
+pub trait OptimismWiring: OptimismChainSpec + revm::EvmWiring {}
+
+impl<EvmWiringT> OptimismWiring for EvmWiringT where EvmWiringT: OptimismChainSpec + revm::EvmWiring {}

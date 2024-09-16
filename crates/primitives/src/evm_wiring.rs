@@ -39,22 +39,11 @@ pub trait ChainSpec: Sized {
 }
 
 pub trait EvmWiring: ChainSpec + Sized {
-    /// Chain specification type.
-    type ChainSpec: ChainSpec;
-
     /// External context type
     type ExternalContext: Sized;
 
     /// Database type.
     type Database: Database;
-}
-
-impl<EvmWiringT: EvmWiring> ChainSpec for EvmWiringT {
-    type ChainContext = <EvmWiringT::ChainSpec as ChainSpec>::ChainContext;
-    type Block = <EvmWiringT::ChainSpec as ChainSpec>::Block;
-    type Transaction = <EvmWiringT::ChainSpec as ChainSpec>::Transaction;
-    type Hardfork = <EvmWiringT::ChainSpec as ChainSpec>::Hardfork;
-    type HaltReason = <EvmWiringT::ChainSpec as ChainSpec>::HaltReason;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -68,13 +57,29 @@ impl ChainSpec for EthereumChainSpec {
     type HaltReason = crate::HaltReason;
 }
 
+pub trait WiringExtendsChainSpec {
+    /// The type of `ChainSpec` that this wiring extends.
+    type ChainSpec: ChainSpec;
+}
+
+impl<EvmWiringT: WiringExtendsChainSpec> ChainSpec for EvmWiringT {
+    type ChainContext = <EvmWiringT::ChainSpec as ChainSpec>::ChainContext;
+    type Block = <EvmWiringT::ChainSpec as ChainSpec>::Block;
+    type Transaction = <EvmWiringT::ChainSpec as ChainSpec>::Transaction;
+    type Hardfork = <EvmWiringT::ChainSpec as ChainSpec>::Hardfork;
+    type HaltReason = <EvmWiringT::ChainSpec as ChainSpec>::HaltReason;
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EthereumWiring<DB: Database, EXT> {
     phantom: core::marker::PhantomData<(DB, EXT)>,
 }
 
-impl<DB: Database, EXT: Debug> EvmWiring for EthereumWiring<DB, EXT> {
+impl<DB: Database, EXT> WiringExtendsChainSpec for EthereumWiring<DB, EXT> {
     type ChainSpec = EthereumChainSpec;
+}
+
+impl<DB: Database, EXT: Debug> EvmWiring for EthereumWiring<DB, EXT> {
     type Database = DB;
     type ExternalContext = EXT;
 }

@@ -1,3 +1,5 @@
+use cfg_if::cfg_if;
+
 use crate::{db::Database, Block, SpecId, Transaction};
 use core::{fmt::Debug, hash::Hash};
 
@@ -17,8 +19,15 @@ impl<HaltReasonT> HaltReasonTrait for HaltReasonT where
 }
 
 pub trait TransactionValidation {
-    /// An error that occurs when validating a transaction.
-    type ValidationError: Debug + core::error::Error;
+    cfg_if! {
+        if #[cfg(feature = "std")] {
+            /// An error that occurs when validating a transaction.
+            type ValidationError: Debug + std::error::Error;
+        } else {
+            /// An error that occurs when validating a transaction.
+            type ValidationError: Debug;
+        }
+    }
 }
 
 pub trait ChainSpec: Sized {

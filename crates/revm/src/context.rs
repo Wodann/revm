@@ -15,14 +15,15 @@ use crate::{
     db::{Database, EmptyDB},
     interpreter::{AccountLoad, Host, SStoreResult, SelfDestructResult},
     primitives::{
-        Address, Block, Bytes, EnvWiring, EthereumWiring, Log, B256, BLOCK_HASH_HISTORY, U256,
+        Address, Block, Bytes, ChainSpec, EnvWiring, EthereumWiring, Log, B256, BLOCK_HASH_HISTORY,
+        U256,
     },
     EvmWiring,
 };
 use std::boxed::Box;
 
 /// Main Context structure that contains both EvmContext and External context.
-#[derive_where(Clone; EvmWiringT::Block, EvmWiringT::ChainContext, EvmWiringT::Transaction, EvmWiringT::Database, <EvmWiringT::Database as Database>::Error, EvmWiringT::ExternalContext)]
+#[derive_where(Clone; <EvmWiringT::ChainSpec as ChainSpec>::Block, <EvmWiringT::ChainSpec as ChainSpec>::ChainContext, <EvmWiringT::ChainSpec as ChainSpec>::Transaction, EvmWiringT::Database, <EvmWiringT::Database as Database>::Error, EvmWiringT::ExternalContext)]
 pub struct Context<EvmWiringT: EvmWiring> {
     /// Evm Context (internal context).
     pub evm: EvmContext<EvmWiringT>,
@@ -41,8 +42,11 @@ impl Default for Context<EthereumWiring<EmptyDB, ()>> {
 
 impl<DB: Database, EvmWiringT> Context<EvmWiringT>
 where
-    EvmWiringT:
-        EvmWiring<Block: Default, Transaction: Default, ExternalContext = (), Database = DB>,
+    EvmWiringT: EvmWiring<
+        ChainSpec: ChainSpec<Block: Default, Transaction: Default>,
+        ExternalContext = (),
+        Database = DB,
+    >,
 {
     /// Creates new context with database.
     pub fn new_with_db(db: DB) -> Context<EvmWiringT> {
@@ -64,17 +68,20 @@ impl<EvmWiringT: EvmWiring> Context<EvmWiringT> {
 }
 
 /// Context with handler configuration.
-#[derive_where(Clone; EvmWiringT::Block, EvmWiringT::ChainContext, EvmWiringT::Transaction,EvmWiringT::Database, <EvmWiringT::Database as Database>::Error, EvmWiringT::ExternalContext)]
+#[derive_where(Clone; <EvmWiringT::ChainSpec as ChainSpec>::Block, <EvmWiringT::ChainSpec as ChainSpec>::ChainContext, <EvmWiringT::ChainSpec as ChainSpec>::Transaction, EvmWiringT::Database, <EvmWiringT::Database as Database>::Error, EvmWiringT::ExternalContext)]
 pub struct ContextWithEvmWiring<EvmWiringT: EvmWiring> {
     /// Context of execution.
     pub context: Context<EvmWiringT>,
     /// Handler configuration.
-    pub spec_id: EvmWiringT::Hardfork,
+    pub spec_id: <EvmWiringT::ChainSpec as ChainSpec>::Hardfork,
 }
 
 impl<EvmWiringT: EvmWiring> ContextWithEvmWiring<EvmWiringT> {
     /// Creates new context with handler configuration.
-    pub fn new(context: Context<EvmWiringT>, spec_id: EvmWiringT::Hardfork) -> Self {
+    pub fn new(
+        context: Context<EvmWiringT>,
+        spec_id: <EvmWiringT::ChainSpec as ChainSpec>::Hardfork,
+    ) -> Self {
         Self { spec_id, context }
     }
 }

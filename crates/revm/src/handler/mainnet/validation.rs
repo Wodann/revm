@@ -2,7 +2,7 @@ use revm_interpreter::gas;
 
 use crate::{
     primitives::{
-        EVMError, EVMResultGeneric, EnvWiring, InvalidTransaction, Spec, Transaction,
+        ChainSpec, EVMError, EVMResultGeneric, EnvWiring, InvalidTransaction, Spec, Transaction,
         TransactionValidation,
     },
     Context, EvmWiring,
@@ -13,7 +13,8 @@ pub fn validate_env<EvmWiringT: EvmWiring, SPEC: Spec>(
     env: &EnvWiring<EvmWiringT>,
 ) -> EVMResultGeneric<(), EvmWiringT>
 where
-    <EvmWiringT::Transaction as TransactionValidation>::ValidationError: From<InvalidTransaction>,
+    <<EvmWiringT::ChainSpec as ChainSpec>::Transaction as TransactionValidation>::ValidationError:
+        From<InvalidTransaction>,
 {
     // Important: validate block before tx.
     env.validate_block_env::<SPEC>()?;
@@ -27,7 +28,8 @@ pub fn validate_tx_against_state<EvmWiringT: EvmWiring, SPEC: Spec>(
     context: &mut Context<EvmWiringT>,
 ) -> EVMResultGeneric<(), EvmWiringT>
 where
-    <EvmWiringT::Transaction as TransactionValidation>::ValidationError: From<InvalidTransaction>,
+    <<EvmWiringT::ChainSpec as ChainSpec>::Transaction as TransactionValidation>::ValidationError:
+        From<InvalidTransaction>,
 {
     // load acc
     let tx_caller = *context.evm.env.tx.caller();
@@ -53,7 +55,8 @@ pub fn validate_initial_tx_gas<EvmWiringT: EvmWiring, SPEC: Spec>(
     env: &EnvWiring<EvmWiringT>,
 ) -> EVMResultGeneric<u64, EvmWiringT>
 where
-    <EvmWiringT::Transaction as TransactionValidation>::ValidationError: From<InvalidTransaction>,
+    <<EvmWiringT::ChainSpec as ChainSpec>::Transaction as TransactionValidation>::ValidationError:
+        From<InvalidTransaction>,
 {
     let input = &env.tx.data();
     let is_create = env.tx.kind().is_create();

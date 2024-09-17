@@ -83,6 +83,9 @@ impl<ChainSpecT> OptimismChainSpec for ChainSpecT where
 }
 
 /// Trait for Optimism `EvmWiring`.
-pub trait OptimismWiring: OptimismChainSpec + revm::EvmWiring {}
+pub trait OptimismWiring: revm::EvmWiring<ChainSpec: OptimismChainSpec> {}
 
-impl<EvmWiringT> OptimismWiring for EvmWiringT where EvmWiringT: OptimismChainSpec + revm::EvmWiring {}
+impl<EvmWiringT> OptimismWiring for EvmWiringT where
+    EvmWiringT: revm::EvmWiring<ChainSpec: OptimismChainSpec>
+{
+}

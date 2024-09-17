@@ -6,8 +6,10 @@ use core::fmt::{self, Debug};
 use std::{boxed::Box, string::String, vec::Vec};
 
 /// Result of EVM execution.
-pub type EVMResult<EvmWiringT> =
-    EVMResultGeneric<ResultAndState<<EvmWiringT as ChainSpec>::HaltReason>, EvmWiringT>;
+pub type EVMResult<EvmWiringT> = EVMResultGeneric<
+    ResultAndState<<<EvmWiringT as EvmWiring>::ChainSpec as ChainSpec>::HaltReason>,
+    EvmWiringT,
+>;
 
 /// Generic result of EVM execution. Used to represent error and generic output.
 pub type EVMResultGeneric<T, EvmWiringT> = core::result::Result<T, EVMErrorWiring<EvmWiringT>>;
@@ -146,7 +148,7 @@ impl Output {
 
 pub type EVMErrorWiring<EvmWiringT> = EVMError<
     <<EvmWiringT as EvmWiring>::Database as Database>::Error,
-    <<EvmWiringT as ChainSpec>::Transaction as TransactionValidation>::ValidationError,
+    <<<EvmWiringT as EvmWiring>::ChainSpec as ChainSpec>::Transaction as TransactionValidation>::ValidationError,
 >;
 
 /// Main EVM error.

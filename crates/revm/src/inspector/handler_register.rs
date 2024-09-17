@@ -265,7 +265,7 @@ mod tests {
     use crate::{
         inspectors::NoOpInspector,
         interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome},
-        primitives::{self, db::EmptyDB, EthereumWiring},
+        primitives::{self, db::EmptyDB, EthereumWiring, EvmWiring as PrimitiveEvmWiring},
         Evm, EvmContext,
     };
 
@@ -378,7 +378,7 @@ mod tests {
             .with_db(BenchmarkDB::new_bytecode(bytecode.clone()))
             .with_external_context(StackInspector::default())
             .modify_tx_env(|tx| {
-                *tx = <TestEvmWiring as primitives::ChainSpec>::Transaction::default();
+                *tx = <<TestEvmWiring as PrimitiveEvmWiring>::ChainSpec as primitives::ChainSpec>::Transaction::default();
 
                 tx.caller = address!("1000000000000000000000000000000000000000");
                 tx.transact_to = TxKind::Call(address!("0000000000000000000000000000000000000000"));

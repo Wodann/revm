@@ -32,7 +32,7 @@ impl<DB: Database, EXT> EvmWiring for OptimismEvmWiring<DB, EXT> {
 }
 
 impl<DB: Database, EXT> revm::EvmWiring for OptimismEvmWiring<DB, EXT> {
-    fn handler<'evm>(hardfork: Self::Hardfork) -> EvmHandler<'evm, Self>
+    fn handler<'evm>(hardfork: <Self::ChainSpec as ChainSpec>::Hardfork) -> EvmHandler<'evm, Self>
     where
         DB: Database,
     {

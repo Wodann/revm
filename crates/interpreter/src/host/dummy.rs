@@ -12,11 +12,8 @@ use std::vec::Vec;
 use super::{AccountLoad, Eip7702CodeLoad, StateLoad};
 
 /// A dummy [Host] implementation.
-#[derive_where(Clone, Debug, Default; <EvmWiringT as ChainSpec>::Block, <EvmWiringT as ChainSpec>::Transaction)]
-pub struct DummyHost<EvmWiringT>
-where
-    EvmWiringT: EvmWiring,
-{
+#[derive_where(Clone, Debug, Default; <EvmWiringT::ChainSpec as ChainSpec>::Block, <EvmWiringT::ChainSpec as ChainSpec>::Transaction)]
+pub struct DummyHost<EvmWiringT: EvmWiring> {
     pub env: EnvWiring<EvmWiringT>,
     pub storage: HashMap<U256, U256>,
     pub transient_storage: HashMap<U256, U256>,
@@ -53,12 +50,12 @@ where
     type EvmWiringT = EvmWiringT;
 
     #[inline]
-    fn env(&self) -> &EnvWiring<Self::EvmWiringT> {
+    fn env(&self) -> &EnvWiring<EvmWiringT> {
         &self.env
     }
 
     #[inline]
-    fn env_mut(&mut self) -> &mut EnvWiring<Self::EvmWiringT> {
+    fn env_mut(&mut self) -> &mut EnvWiring<EvmWiringT> {
         &mut self.env
     }
 

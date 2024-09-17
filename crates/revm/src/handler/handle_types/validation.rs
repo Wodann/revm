@@ -1,6 +1,8 @@
 use crate::{
     handler::mainnet,
-    primitives::{EVMResultGeneric, EnvWiring, InvalidTransaction, Spec, TransactionValidation},
+    primitives::{
+        ChainSpec, EVMResultGeneric, EnvWiring, InvalidTransaction, Spec, TransactionValidation,
+    },
     Context, EvmWiring,
 };
 use std::sync::Arc;
@@ -30,7 +32,8 @@ pub struct ValidationHandler<'a, EvmWiringT: EvmWiring> {
 
 impl<'a, EvmWiringT: EvmWiring + 'a> ValidationHandler<'a, EvmWiringT>
 where
-    <EvmWiringT::Transaction as TransactionValidation>::ValidationError: From<InvalidTransaction>,
+    <<EvmWiringT::ChainSpec as ChainSpec>::Transaction as TransactionValidation>::ValidationError:
+        From<InvalidTransaction>,
 {
     /// Create new ValidationHandles
     pub fn new<SPEC: Spec + 'a>() -> Self {

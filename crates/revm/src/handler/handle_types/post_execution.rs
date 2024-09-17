@@ -2,7 +2,7 @@
 use crate::{
     handler::mainnet,
     interpreter::Gas,
-    primitives::{EVMResult, EVMResultGeneric, ResultAndState, Spec},
+    primitives::{ChainSpec, EVMResult, EVMResultGeneric, ResultAndState, Spec},
     Context, EvmWiring, FrameResult,
 };
 use std::sync::Arc;
@@ -100,7 +100,10 @@ impl<'a, EvmWiringT: EvmWiring> PostExecutionHandler<'a, EvmWiringT> {
     pub fn end(
         &self,
         context: &mut Context<EvmWiringT>,
-        end_output: EVMResultGeneric<ResultAndState<EvmWiringT::HaltReason>, EvmWiringT>,
+        end_output: EVMResultGeneric<
+            ResultAndState<<EvmWiringT::ChainSpec as ChainSpec>::HaltReason>,
+            EvmWiringT,
+        >,
     ) -> EVMResult<EvmWiringT> {
         (self.end)(context, end_output)
     }

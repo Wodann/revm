@@ -18,7 +18,7 @@ pub trait OpTxTr: Transaction {
     fn mint(&self) -> Option<u128>;
 
     /// Whether the transaction is a system transaction
-    fn is_system_transaction(&self) -> bool;
+    fn is_system_transaction(&self) -> Option<bool>;
 
     /// Returns `true` if transaction is of type [`DEPOSIT_TRANSACTION_TYPE`].
     fn is_deposit(&self) -> bool {
@@ -148,8 +148,12 @@ impl<T: Transaction> OpTxTr for OpTransaction<T> {
         self.deposit.mint
     }
 
-    fn is_system_transaction(&self) -> bool {
-        self.deposit.is_system_transaction
+    fn is_system_transaction(&self) -> Option<bool> {
+        if self.tx_type() != DEPOSIT_TRANSACTION_TYPE {
+            return None;
+        }
+
+        Some(self.deposit.is_system_transaction)
     }
 }
 

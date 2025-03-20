@@ -72,7 +72,7 @@ where
         let tx_type = tx.tx_type();
         if tx_type == DEPOSIT_TRANSACTION_TYPE {
             // Do not allow for a system transaction to be processed if Regolith is enabled.
-            if tx.is_system_transaction()
+            if tx.is_system_transaction().is_some_and(|is_sys| is_sys)
                 && evm.ctx().cfg().spec().is_enabled_in(OpSpecId::REGOLITH)
             {
                 return Err(OpTransactionError::DepositSystemTxPostRegolith.into());
@@ -222,7 +222,7 @@ where
                 gas.record_refund(refunded);
             } else if is_deposit {
                 let tx = ctx.tx();
-                if tx.is_system_transaction() {
+                if tx.is_system_transaction().is_some_and(|is_sys| is_sys) {
                     // System transactions were a special type of deposit transaction in
                     // the Bedrock hardfork that did not incur any gas costs.
                     gas.erase_cost(tx_gas_limit);
@@ -386,7 +386,7 @@ where
             let tx = ctx.tx();
             let caller = tx.caller();
             let mint = tx.mint();
-            let is_system_tx = tx.is_system_transaction();
+            let is_system_tx = tx.is_system_transaction().is_some_and(|is_sys| is_sys);
             let gas_limit = tx.gas_limit();
             // If the transaction is a deposit transaction and it failed
             // for any reason, the caller nonce must be bumped, and the
